@@ -17,11 +17,7 @@
 
 .Canvas > .sample-canvas {
   height: 100%;
-}
-
-.Canvas > .sample-canvas > .canvas-container {
-  height: 100%;
-  width: 100%;
+  /* Fabric wrapper/canvases are stretched via app/globals.css */
 }
 
 .RightPanel {

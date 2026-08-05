@@ -26,7 +26,7 @@ npm run dev   # http://localhost:3000
 - Add images (upload or URL), text (Google Fonts), freehand draw (5 brush styles), shapes
 - Per-object scale / layer order / delete; shadow color, blur, offset
 - Stroke + background colors
-- Export **PNG** (4x) or **JSON scene** (re-loadable)
+- Export **PNG** (3000×3000 — SoundCloud's recommended artwork size) or **JSON scene** (re-loadable)
 - Keyboard: `Backspace` delete · arrows = z-order · `Esc` deselect · `+/-` scale
 
 ## Roadmap

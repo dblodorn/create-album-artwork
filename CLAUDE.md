@@ -66,8 +66,8 @@ lib/
 
 - **Editor API** (`useFabricJSEditor`): wraps the raw Fabric `Canvas` in a typed object (`addText`, `deleteSelected`, `setFillColor`, …). Built once `onReady` fires. All mutations go through this object or directly through `editor.canvas`.
 - **Autosave**: `useCanvasAutosave` listens to `object:modified/added/removed`, debounces 500ms, writes `canvas.toJSON()` to `localStorage` under `canvas-editor-autosave`. On mount, `loadFromLocalStorage` restores; if empty, background defaults to `#FFFFFF`.
-- **Image insertion**: `Image.fromURL(url, { crossOrigin: 'anonymous' })` → `scaleImageToCanvas` (fits at ¼ canvas size, centered) → `canvas.add` → `setActiveObject`. URL tab and upload tab both produce a URL string consumed by `onImageSelect`.
-- **Export**: `getCanvasBlob` renders `toCanvasElement(4)` (4x multiplier ≈ print-res) → PNG blob. JSON export is `{ canvasData: canvas.toJSON() }`.
+- **Image insertion**: `Image.fromURL(url, { crossOrigin: 'anonymous' })` → `scaleImageToCanvas` (fits 90% of logical canvas, centered) → `canvas.add` → `setActiveObject`. Uploads are read as **data URLs** (`useImageUpload`) so they serialize into `canvas.toJSON()` and survive autosave restore (blob: URLs die with the session).
+- **Export**: `getCanvasBlob` renders `toCanvasElement(EXPORT_MULTIPLIER)` against the fixed 1000×1000 logical canvas (see `lib/constants.ts`) → 3000×3000px PNG, SoundCloud's recommended artwork size. JSON export is `{ canvasData: canvas.toJSON() }`.
 - **Keyboard**: `Backspace` delete, arrows = z-order (Up/Down = front/back, Left/Right = forward/backward), `Esc` deselect, `+/-` scale. Disabled on mobile UA.
 - **CORS**: images loaded with `crossOrigin: 'anonymous'` so canvas export isn't tainted. Any future remote-image source (AI-generated, Spaces-hosted) must send `Access-Control-Allow-Origin` headers.
 

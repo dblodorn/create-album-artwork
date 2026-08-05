@@ -16,3 +16,18 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* The Fabric canvas has a fixed logical resolution (see lib/constants.ts).
+   Fabric sets inline width/height on the wrapper and both canvas elements;
+   these rules stretch them to the container so the logical coordinate
+   system stays constant while the visual size is responsive. */
+.sample-canvas {
+  aspect-ratio: 1 / 1;
+}
+
+.sample-canvas .canvas-container,
+.sample-canvas .lower-canvas,
+.sample-canvas .upper-canvas {
+  width: 100% !important;
+  height: 100% !important;
+}

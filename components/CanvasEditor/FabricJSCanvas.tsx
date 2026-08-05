@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Canvas } from 'fabric'
 
+import { LOGICAL_CANVAS_SIZE } from './lib/constants'
 import {
   type FabricJSEditor,
   type FabricJSEditorHook,
@@ -14,26 +15,18 @@ export interface Props {
 
 const FabricJSCanvas = ({ className, onReady }: Props) => {
   const canvasEl = useRef<HTMLCanvasElement>(null)
-  const canvasElParent = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!canvasEl.current) return
 
-    const canvas = new Canvas(canvasEl.current)
-    const setCurrentDimensions = () => {
-      canvas.setDimensions({
-        width: canvasElParent.current?.clientWidth || 0,
-        height: canvasElParent.current?.clientHeight || 0,
-      })
-      canvas.renderAll()
-    }
-    setCurrentDimensions()
-
-    const resizeCanvas = () => {
-      setCurrentDimensions()
-    }
-
-    window.addEventListener('resize', resizeCanvas, false)
+    // Fixed logical resolution — the wrapper div and both canvas elements
+    // are stretched to the container via CSS (see globals.css), so the
+    // coordinate system stays at LOGICAL_CANVAS_SIZE regardless of screen
+    // size. Export uses toCanvasElement(EXPORT_MULTIPLIER) for full res.
+    const canvas = new Canvas(canvasEl.current, {
+      width: LOGICAL_CANVAS_SIZE,
+      height: LOGICAL_CANVAS_SIZE,
+    })
 
     if (onReady) {
       onReady(canvas)
@@ -41,12 +34,11 @@ const FabricJSCanvas = ({ className, onReady }: Props) => {
 
     return () => {
       canvas.dispose()
-      window.removeEventListener('resize', resizeCanvas)
     }
   }, [])
 
   return (
-    <div ref={canvasElParent} className={className}>
+    <div className={className}>
       <canvas ref={canvasEl} />
     </div>
   )

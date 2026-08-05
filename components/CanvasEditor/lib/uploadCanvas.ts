@@ -1,4 +1,5 @@
 import type { Canvas } from 'fabric'
+import { EXPORT_MULTIPLIER } from './constants'
 import type { FabricJSEditor } from './useFabricJSEditor'
 
 const CANVAS_STORAGE_KEY = 'canvas-editor-autosave'
@@ -8,7 +9,10 @@ export const getCanvasBlob = (
   type: 'image/png' | 'image/jpeg' = 'image/png'
 ): Promise<Blob> => {
   return new Promise((resolve, reject) => {
-    const canvasEl = editor.canvas.toCanvasElement(4)
+    // Renders the full logical canvas at EXPORT_MULTIPLIER resolution
+    // (1000 * 3 = 3000px — SoundCloud's recommended artwork size),
+    // regardless of the on-screen CSS-scaled size.
+    const canvasEl = editor.canvas.toCanvasElement(EXPORT_MULTIPLIER)
     canvasEl.toBlob(
       (blob) =>
         blob ? resolve(blob) : reject(new Error('Could not generate canvas blob')),
@@ -22,7 +26,7 @@ export const downloadPNG = async (editor: FabricJSEditor) => {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'canvas.png'
+  a.download = 'album-artwork.png'
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -35,7 +39,7 @@ export const downloadJSON = (editor: FabricJSEditor) => {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'canvas-state.json'
+  a.download = 'album-artwork-state.json'
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
