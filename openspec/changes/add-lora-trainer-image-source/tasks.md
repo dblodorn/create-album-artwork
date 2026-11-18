@@ -60,4 +60,4 @@
   - adding a new operation means adding it to `operations.ts` and `client.ts`.
 
   Verify by reading both files back for accuracy.
-- [ ] 6.3 Operator step (the user does this, not the agent): issue the key with `npm run api-client -- create create-album-artwork` in dmbk-graphql-api, then set `DMBK_GRAPHQL_API_KEY` in the Vercel project `create-album-artwork` (Production and Preview) and in `.env.local`. Verify that a preview deployment's LoRA tab loads data.
+- [x] 6.3 Operator step (the user does this, not the agent): issue the key with `npm run api-client -- create create-album-artwork` in dmbk-graphql-api, then set `DMBK_GRAPHQL_API_KEY` in the Vercel project `create-album-artwork` (Production and Preview) and in `.env.local`. Verify that a preview deployment's LoRA tab loads data.
