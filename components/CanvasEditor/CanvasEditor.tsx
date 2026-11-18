@@ -105,7 +105,8 @@ export function CanvasEditor() {
         img.scaleToHeight(h)
         img.scaleToWidth(w)
 
-        img.set({ left: x, top: y, angle: 0 })
+        // x/y are the top-left corner; Fabric 7 positions by centre by default.
+        img.set({ left: x + w / 2, top: y + h / 2, angle: 0 })
 
         editor.canvas.add(img)
         editor.canvas.setActiveObject(img)
@@ -116,6 +117,8 @@ export function CanvasEditor() {
           color: 'critical',
           text: "Couldn't load that image. If it's a URL, the host may not allow cross-origin use.",
         })
+        // Rejects so the picker stays open.
+        throw err
       }
     },
     [editor, isDrawing, toggleDraw, toast]

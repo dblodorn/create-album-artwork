@@ -4,10 +4,10 @@ import { useCallback, useRef, useState } from 'react'
 // full-bleed layer at the 3000px export without bloating the saved scene.
 const MAX_UPLOAD_EDGE = 2048
 
-// Downscales the file and returns it as a data URL, so the image is stored
-// inside the scene JSON and survives reloads (blob: URLs don't).
-export const fileToDataURL = async (file: File): Promise<string> => {
-  const bitmap = await createImageBitmap(file)
+// Downscales the image and returns it as a data URL, so it's stored inside
+// the scene JSON and survives reloads (blob: and remote URLs may not).
+export const blobToDataURL = async (blob: Blob): Promise<string> => {
+  const bitmap = await createImageBitmap(blob)
   try {
     const scale = Math.min(1, MAX_UPLOAD_EDGE / Math.max(bitmap.width, bitmap.height))
     const canvas = document.createElement('canvas')
@@ -16,7 +16,7 @@ export const fileToDataURL = async (file: File): Promise<string> => {
     canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
     // Keep formats that can carry transparency lossless.
     const keepAlpha = ['image/png', 'image/webp', 'image/gif', 'image/svg+xml'].includes(
-      file.type
+      blob.type
     )
     return keepAlpha
       ? canvas.toDataURL('image/png')
@@ -24,6 +24,17 @@ export const fileToDataURL = async (file: File): Promise<string> => {
   } finally {
     bitmap.close()
   }
+}
+
+// Fetches a remote image (the host must allow CORS) and embeds it like an upload.
+export const urlToDataURL = async (url: string): Promise<string> => {
+  const res = await fetch(url, { mode: 'cors' })
+  if (!res.ok) throw new Error(`Image request failed: ${res.status}`)
+  const blob = await res.blob()
+  if (!blob.type.startsWith('image/')) {
+    throw new Error(`Not an image: ${blob.type || 'unknown type'}`)
+  }
+  return blobToDataURL(blob)
 }
 
 export function useImageUpload() {
@@ -44,7 +55,7 @@ export function useImageUpload() {
       setError(null)
       setUploading(true)
       try {
-        setImage(await fileToDataURL(file))
+        setImage(await blobToDataURL(file))
       } catch (e) {
         console.error('Failed to read image', e)
         setError("Couldn't read that file as an image.")

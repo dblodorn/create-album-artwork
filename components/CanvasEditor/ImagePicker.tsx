@@ -1,33 +1,48 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Button, Modal, Tabs, TextField, Tooltip, View } from 'reshaped'
 
 import css from './CanvasEditor.module.css'
 import { Photo } from './icons'
 import { ImageUploader } from './ImageUploader'
+import { LoraBrowser } from './LoraBrowser'
 
 export function ImagePicker({
   onImageSelect,
   disabled,
   text = 'Add image',
 }: {
-  onImageSelect?: (image: string) => void
+  onImageSelect?: (image: string) => Promise<void>
   disabled?: boolean
   text?: string
 }) {
   const [showModal, setShowModal] = useState(false)
   const [urlInput, setUrlInput] = useState('')
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
 
+  // Resolves true once the image is on the canvas. On failure onImageSelect has
+  // already shown a toast, so the picker just stays open.
   const handleSelectImage = useCallback(
-    (image: string) => {
-      onImageSelect?.(image)
-      setShowModal(false)
+    async (image: string) => {
+      if (busyRef.current) return false
+      busyRef.current = true
+      setBusy(true)
+      try {
+        await onImageSelect?.(image)
+        setShowModal(false)
+        return true
+      } catch {
+        return false
+      } finally {
+        busyRef.current = false
+        setBusy(false)
+      }
     },
-    [setShowModal, onImageSelect]
+    [onImageSelect]
   )
 
-  const handleUrlSubmit = useCallback(() => {
-    if (urlInput.trim()) {
-      handleSelectImage(urlInput.trim())
+  const handleUrlSubmit = useCallback(async () => {
+    if (urlInput.trim() && (await handleSelectImage(urlInput.trim()))) {
       setUrlInput('')
     }
   }, [urlInput, handleSelectImage])
@@ -57,9 +72,10 @@ export function ImagePicker({
           <Tabs.List>
             <Tabs.Item value="upload">Upload</Tabs.Item>
             <Tabs.Item value="url">URL</Tabs.Item>
+            <Tabs.Item value="lora">LoRA</Tabs.Item>
           </Tabs.List>
           <Tabs.Panel value="upload">
-            <ImageUploader handleSelectImage={handleSelectImage} />
+            <ImageUploader handleSelectImage={handleSelectImage} busy={busy} />
           </Tabs.Panel>
           <Tabs.Panel value="url">
             <View gap={4} paddingTop={6} align="center">
@@ -78,10 +94,15 @@ export function ImagePicker({
                 color="neutral"
                 onClick={handleUrlSubmit}
                 disabled={!urlInput.trim()}
+                loading={busy}
               >
                 Add Image
               </Button>
             </View>
+          </Tabs.Panel>
+          {/* Panels mount only while active, so nothing is fetched until opened. */}
+          <Tabs.Panel value="lora">
+            <LoraBrowser onSelect={handleSelectImage} />
           </Tabs.Panel>
         </Tabs>
       </Modal>

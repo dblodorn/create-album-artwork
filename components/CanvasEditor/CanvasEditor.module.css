@@ -101,10 +101,85 @@
   grid-gap: var(--rs-unit-x2);
 }
 
-.ImageGridWrapper {
+/* Doubled so it beats Reshaped's .--position-center width/height/overflow;
+   Reshaped's max-width still caps it at phone width. */
+.ImageGridWrapper.ImageGridWrapper {
   width: 590px;
-  height: 590px;
-  overflow-y: scroll;
+  height: min(590px, calc(100dvh - var(--rs-unit-x8)));
+  overflow-y: auto;
+}
+
+/* LORA TAB */
+.LoraBrowser {
+  min-height: 100%;
+}
+
+.LoraHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--rs-unit-x2);
+  padding: var(--rs-unit-x3) 0 var(--rs-unit-x2);
+  background: var(--rs-color-background-elevation-overlay);
+}
+
+.LoraGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--rs-unit-x3);
+}
+
+.LoraTile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rs-unit-x1);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+  &:focus-visible {
+    outline: var(--rs-outline);
+    outline-offset: 2px;
+    border-radius: var(--rs-radius-small);
+  }
+}
+
+.LoraThumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--rs-radius-small);
+  background: var(--rs-color-background-neutral-faded);
+  & > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform var(--rs-duration-fast) var(--rs-easing-standard);
+  }
+}
+
+.LoraTile:not(:disabled):hover .LoraThumb > img {
+  transform: scale(1.04);
+}
+
+.LoraThumbBusy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
 }
 
 .ImageButton {
