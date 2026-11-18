@@ -6,8 +6,10 @@ import { useImageUpload } from './lib'
 
 export function ImageUploader({
   handleSelectImage,
+  busy,
 }: {
-  handleSelectImage: (image: string) => void
+  handleSelectImage: (image: string) => unknown
+  busy?: boolean
 }) {
   const { fileInputRef, uploading, image, error, handleFile, setImage } =
     useImageUpload()
@@ -86,6 +88,7 @@ export function ImageUploader({
             variant="solid"
             color="neutral"
             onClick={useImageHandler}
+            loading={busy}
           >
             Use Image
           </Button>

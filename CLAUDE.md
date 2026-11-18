@@ -25,7 +25,7 @@ No tests, no lint configured; run `typecheck` and `build` before committing. Dep
 
 | Layer | Tech | Notes |
 |-------|------|-------|
-| Framework | Next.js 16.2 (App Router) | `app/` dir, single route (`page.tsx`) |
+| Framework | Next.js 16.2 (App Router) | `app/` dir: one page (`page.tsx`) + one route handler (`api/dmbk`) |
 | UI | React 19.2 + Reshaped 4.1 | `slate` theme, dark mode (`data-rs-color-mode="dark"`) |
 | Canvas | Fabric.js 7.4 | `Canvas`, `Textbox`, `Image`, free-draw brush |
 | Fonts | Google Fonts runtime `@import` | 51 families in `lib/googleFonts.tsx` |
@@ -39,6 +39,7 @@ app/
   layout.tsx          # Root: dark-mode slate theme, globals.css
   page.tsx            # Client component → <App> → <CanvasEditor>
   App.tsx             # <Reshaped theme="slate"> provider wrapper
+  api/dmbk/route.ts   # POST { operation, variables } → dmbk GraphQL API with X-API-Key (allowlisted ops only)
 components/CanvasEditor/
   CanvasEditor.tsx    # Orchestrator: full-window layout — top bar, Workspace, floating panels
   Workspace.tsx       # zoom/pan viewport hosting the canvas (wheel, Space/middle drag, ⌘ shortcuts)
@@ -50,13 +51,14 @@ components/CanvasEditor/
   DrawingControls     # free-draw toggle, line weight slider, brushes
   ExportControls      # PNG / JSON download, JSON load, clear
   FontSelector        # Google Fonts modal
-  ImagePicker         # modal: Upload tab | URL tab
+  ImagePicker         # modal: Upload tab | URL tab | LoRA tab; closes only once the image is added
+  LoraBrowser         # LoRA tab: lora-trainer LoRAs → their images → pick embeds as data URL
   ImageUploader       # file input → downscaled data URL preview
   ShadowControls      # shadow color/blur/offset (paths, images, text)
   lib/
     useFabricJSEditor.tsx  # hook: builds editor API over Canvas
     useEditorItems.ts      # selection state, keyboard shortcuts, z-order
-    useImageUpload.tsx     # local file → downscaled (≤2048px) data URL
+    useImageUpload.tsx     # blobToDataURL (≤2048px data URL), urlToDataURL (CORS fetch → same), upload hook
     uploadCanvas.ts        # getCanvasBlob, download*, IndexedDB saveScene/loadScene, restoreScene
     constants.ts           # ARTBOARD (1000), EXPORT_SIZE (3000), zoom limits, defaults
     useViewport.ts         # zoom/pan state; starts fitted, refits on resize until user zooms/pans
@@ -68,6 +70,10 @@ components/CanvasEditor/
 lib/
   useCanvasAutosave.ts  # 500ms debounced IndexedDB save; requestSave + restore
   googleFonts.tsx       # font list, picker previews, ensureFontLoaded()
+  dmbk/
+    operations.ts       # server-only: allowlisted query text + variable validators, env reads
+    client.ts           # browser: dmbkQuery(op, vars) → /api/dmbk, hand-written result types, DmbkError
+    useConnection.ts    # paginated Relay connection: items, loadMore, retry, stale-key drop
 ```
 
 ## Key patterns
@@ -78,7 +84,8 @@ lib/
 - **Object types**: Fabric 7 reports `type` as the lowercased class name (`'textbox'`, not `'text'`). Use `isText`/`isImage`/`isPath` from `lib/objectTypes.ts`, never string compares.
 - **Autosave**: `useCanvasAutosave` debounces 500ms and writes `{ canvasData: canvas.toJSON() }` to IndexedDB (`idb-keyval`, key `canvas-editor-scene-v1`) on object events and `requestSave()` (wired to `editor.commit`). `restore()` loads it on mount, migrating the old `localStorage["canvas-editor-autosave"]` once; saves are suppressed while restoring. `restoreScene` drops images with dead `blob:` URLs up front and loads the scene's fonts before rendering. If nothing is saved, background defaults to `#FFFFFF`.
 - **Fonts**: `ensureFontLoaded(family)` adds a persistent Google Fonts `<link>` and awaits `document.fonts.load` before text is changed or restored. Picking a font with no text selected sets the font for the next text added.
-- **Image insertion**: uploads become downscaled data URLs (so they persist in the scene). `FabricImage.fromURL(url, { crossOrigin: 'anonymous' })` → `scaleImageToCanvas` (fits at ¼ canvas size, centered) → `canvas.add` → `setActiveObject`. URL tab and upload tab both produce a URL string consumed by `onImageSelect`.
+- **Image insertion**: uploads and LoRA picks become downscaled data URLs (so they persist in the scene and don't depend on the source URL). `FabricImage.fromURL(url, { crossOrigin: 'anonymous' })` → `scaleImageToCanvas` (fits at ¼ canvas size; returns the top-left corner, so `onImageSelect` adds half the size because Fabric 7 positions by centre) → `canvas.add` → `setActiveObject`. Every tab produces a string consumed by `onImageSelect`, which returns a promise that rejects after its toast; `ImagePicker` closes only on success. The URL tab still passes the remote URL through as-is.
+- **dmbk GraphQL API** (`/api/dmbk`): the browser posts `{ operation, variables }`; the route checks same-origin, looks the operation up in `lib/dmbk/operations.ts` (raw `query` text and unknown names → 400), and forwards with `X-API-Key` and a 10 s timeout. Missing key → 503 `not_configured`; any upstream failure → 502 `upstream` (cause logged server-side only). **To add an operation**, add its query text + validator to `OPERATIONS` in `operations.ts` and its types to `Operations` in `client.ts`. A local run reads production data unless `DMBK_GRAPHQL_API_URL` is overridden. Details in `docs/ARCHITECTURE.md` §1a.
 - **Export**: `getCanvasBlob` renders `toCanvasElement(EXPORT_SIZE / ARTBOARD)` → 3000×3000 PNG blob (Fabric skips selection controls on export). JSON export is `{ canvasData: canvas.toJSON() }`.
 - **Keyboard** (`useEditorItems`, one `keydown` listener): `Backspace`/`Delete` delete, arrows = z-order (Up/Down = front/back, Left/Right = forward/backward), `Esc` deselect, `+`/`=`/`-` scale. Ignored while editing canvas text or typing in a form field, and on mobile UA. Workspace: ⌘/Ctrl `=`/`-`/`0`/`1` zoom in/out/fit/100%, pinch or ⌘/Ctrl+wheel zooms at cursor, wheel pans, Space-drag or middle-drag pans.
 - **CORS**: images loaded with `crossOrigin: 'anonymous'` so canvas export isn't tainted. Any future remote-image source (AI-generated, Spaces-hosted) must send `Access-Control-Allow-Origin` headers.
@@ -112,13 +119,24 @@ The URL tab in `ImagePicker` accepts arbitrary URLs today. Before server-side fe
 
 ## Conventions
 
-- Client components everywhere except `layout.tsx` (`"use client"` on `page.tsx`, `App.tsx`, all of `CanvasEditor`).
+- Client components everywhere except `layout.tsx` and `app/api/` (`"use client"` on `page.tsx`, `App.tsx`, all of `CanvasEditor`). Server-only modules `import 'server-only'`.
 - Absolute imports via `@/*` → repo root.
 - Icons are hand-rolled SVG React components in `components/CanvasEditor/icons/` (not lucide here).
 - Styling: Reshaped props + `CanvasEditor.module.css` (CSS module). Circle buttons = `.CircleButton` class.
 - Fonts: add a family to `googleFontFamilies` in `lib/googleFonts.tsx`; `<GoogleFontImport>` injects the `@import` per item.
 
-## Env (when AI/publish lands)
+## Env
+
+In use now (see `.env.example`):
+
+```
+DMBK_GRAPHQL_API_URL=     # optional; defaults to https://graphql.dmbk.network/graphql
+DMBK_GRAPHQL_API_KEY=     # this app's client key (dmbk-graphql-api: npm run api-client -- create create-album-artwork)
+```
+
+Without the key only the LoRA tab breaks (it shows "not set up").
+
+When AI/publish lands:
 
 ```
 FAL_AI_API_KEY=           # fal.ai dashboard
