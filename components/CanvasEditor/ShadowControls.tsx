@@ -6,6 +6,7 @@ import { Button, Popover, Slider, Text, Tooltip, View } from 'reshaped'
 import css from './CanvasEditor.module.css'
 import { Shadow as ShadowIcon } from './icons'
 import type { FabricJSEditor } from './lib'
+import { isImage, isPath, isText } from './lib/objectTypes'
 
 export function ShadowControls({
   editor,
@@ -21,9 +22,7 @@ export function ShadowControls({
   const [shadowBlur, setShadowBlur] = useState(0)
 
   const hasActiveItem =
-    ((activeItem as any)?.type === 'path') ||
-    ((activeItem as any)?.type === 'image') ||
-    ((activeItem as any)?.type === 'text')
+    isPath(activeItem) || isImage(activeItem) || isText(activeItem)
 
   useEffect(() => {
     if (!editor) return

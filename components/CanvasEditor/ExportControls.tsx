@@ -1,14 +1,17 @@
 import { useRef } from 'react'
-import { Button, Tooltip, View } from 'reshaped'
+import { Button, Tooltip, View, useToast } from 'reshaped'
 
 import { downloadJSON, downloadPNG, loadJSON } from './lib/uploadCanvas'
 import type { FabricJSEditor } from './lib/useFabricJSEditor'
 
 export function ExportControls({
   editor,
+  onSceneLoaded,
 }: {
   editor: FabricJSEditor | undefined
+  onSceneLoaded?: () => void
 }) {
+  const toast = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleDownloadPNG = async () => {
@@ -22,9 +25,22 @@ export function ExportControls({
   }
 
   const handleLoadJSONFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!editor || !event.target.files?.[0]) return
-    await loadJSON(editor, event.target.files[0])
+    const file = event.target.files?.[0]
     event.target.value = ''
+    if (!editor || !file) return
+    try {
+      const dropped = await loadJSON(editor, file)
+      onSceneLoaded?.()
+      if (dropped) {
+        toast.show({
+          color: 'warning',
+          text: `${dropped} image(s) in that file referenced temporary blob: URLs and were skipped.`,
+        })
+      }
+    } catch (err) {
+      console.error('Failed to load JSON', err)
+      toast.show({ color: 'critical', text: "Couldn't load that file as a canvas scene." })
+    }
   }
 
   const handleClear = () => {

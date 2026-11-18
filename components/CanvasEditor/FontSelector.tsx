@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Button, Modal, Text, Tooltip, View } from 'reshaped'
+import { useCallback, useState } from 'react'
+import { Button, Modal, Tooltip, View } from 'reshaped'
 
 import { fonts } from '@/lib/googleFonts'
 
@@ -17,24 +17,13 @@ export function FontSelector({
 }) {
   const [showFontSelector, setShowFontSelector] = useState(false)
 
-  const [fontFamily, setFontFamily] = useState('Comic Sans Ms')
-
-  useEffect(() => {
-    if (!editor) return
-    const text = editor.canvas.getActiveObject()
-
-    if ((text as any)?.type === 'text') {
-      ;(text as any).fontFamily = fontFamily
-      editor.canvas.requestRenderAll()
-    }
-  }, [fontFamily, editor])
-
+  // Applies to the selected text, or becomes the font for the next text added.
   const onClickItem = useCallback(
     (family: string) => {
-      setFontFamily(family)
       setShowFontSelector(false)
+      editor?.setFont(family)
     },
-    [setFontFamily, setShowFontSelector]
+    [editor, setShowFontSelector]
   )
 
   return (

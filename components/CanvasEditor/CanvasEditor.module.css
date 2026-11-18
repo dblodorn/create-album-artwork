@@ -15,13 +15,13 @@
   width: calc(100% - var(--rs-unit-x10) - var(--rs-unit-x1));
 }
 
-.Canvas > .sample-canvas {
+.CanvasMount {
+  width: 100%;
   height: 100%;
 }
 
-.Canvas > .sample-canvas > .canvas-container {
-  height: 100%;
-  width: 100%;
+.CanvasMount > :global(.canvas-container) {
+  max-width: 100%;
 }
 
 .RightPanel {

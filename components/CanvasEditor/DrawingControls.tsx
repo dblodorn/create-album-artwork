@@ -5,6 +5,8 @@ import { Button, Popover, Radio, RadioGroup, Slider, Text, Tooltip, View } from 
 import css from './CanvasEditor.module.css'
 import { Brush, Draw, LineWeight } from './icons'
 import type { FabricJSEditor } from './lib'
+import { DEFAULT_BRUSH_WIDTH } from './lib/constants'
+import { isPath } from './lib/objectTypes'
 
 const BRUSHES = ['spray', 'square', 'diamond', 'texture', 'path']
 
@@ -21,33 +23,30 @@ export function DrawingControls({
   toggleDraw: () => void
   showBrushSelector?: boolean
 }) {
-  const [strokeWeight, setStrokeWeight] = useState(2)
+  const [strokeWeight, setStrokeWeight] = useState(DEFAULT_BRUSH_WIDTH)
 
   const handleSetStrokeWeight = useCallback(
     (weight: number) => {
       if (!editor) return
-      if (!editor?.canvas.freeDrawingBrush) return
       setStrokeWeight(weight)
-      if (activeItem && (activeItem as any).type === 'path') {
-        activeItem.strokeWidth && setStrokeWeight(activeItem.strokeWidth)
-
+      if (editor.canvas.freeDrawingBrush) {
         editor.canvas.freeDrawingBrush.width = weight
+      }
+      if (isPath(activeItem)) {
         activeItem.set({ strokeWidth: weight })
-
-        editor.canvas.renderAll()
-      } else {
-        editor.canvas.freeDrawingBrush.width = weight
+        activeItem.setCoords()
+        editor.commit()
       }
     },
     [editor, activeItem, setStrokeWeight]
   )
 
+  // Show the selected path's weight in the slider.
   useEffect(() => {
-    if (!editor) return
-    if (activeItem && (activeItem as any).type === 'path') {
-      activeItem.strokeWidth && setStrokeWeight(activeItem.strokeWidth)
+    if (isPath(activeItem) && activeItem.strokeWidth) {
+      setStrokeWeight(activeItem.strokeWidth)
     }
-  }, [editor, strokeWeight, activeItem, setStrokeWeight])
+  }, [activeItem])
 
   const [currentBrush, setCurrentBrush] = useState('path')
 
@@ -85,10 +84,10 @@ export function DrawingControls({
               <Text variant="caption-2">Line weight</Text>
               <Slider
                 name="slider"
-                defaultValue={strokeWeight}
+                value={strokeWeight}
                 min={1}
                 max={100}
-                onChange={(event: any) => handleSetStrokeWeight(event.value)}
+                onChange={({ value }) => handleSetStrokeWeight(value)}
               />
             </View>
           </Popover.Content>

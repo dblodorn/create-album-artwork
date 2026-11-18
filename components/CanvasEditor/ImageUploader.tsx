@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { Button, Image, Loader, View } from 'reshaped'
+import { Button, Image, Loader, Text, View } from 'reshaped'
 
 import css from './CanvasEditor.module.css'
 import { useImageUpload } from './lib'
@@ -9,7 +9,8 @@ export function ImageUploader({
 }: {
   handleSelectImage: (image: string) => void
 }) {
-  const { fileInputRef, uploading, image, handleFile, setImage } = useImageUpload()
+  const { fileInputRef, uploading, image, error, handleFile, setImage } =
+    useImageUpload()
 
   const useImageHandler = useCallback(() => {
     image && handleSelectImage?.(image)
@@ -58,16 +59,22 @@ export function ImageUploader({
               </Button>
             </>
           )}
-          {uploading && !image && (
+          {uploading && (
             <View width="100%" height="100%" align="center" justify="center">
               <Loader size="medium" />
             </View>
           )}
         </View>
       </View>
+      {error && (
+        <Text variant="caption-1" color="critical">
+          {error}
+        </Text>
+      )}
       <View>
         <input
           type="file"
+          accept="image/*"
           ref={fileInputRef}
           onChange={handleFile}
           style={{ display: 'none' }}

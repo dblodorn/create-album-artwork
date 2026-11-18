@@ -63,10 +63,49 @@ export const fonts: FontOption[] = [
   ...googleFontFamilies.map((family) => ({ family })),
 ]
 
+// Fonts the browser already has; never fetched from Google Fonts.
+const SYSTEM_FONTS = new Set(['Arial', 'Comic Sans Ms'])
+
+const googleFontValue = (family: string) =>
+  family.replace(/'|"/g, '').replace(/ /g, '+')
+
+const googleFontUrl = (family: string) =>
+  `https://fonts.googleapis.com/css?family=${googleFontValue(family)}&display=swap`
+
 export function GoogleFontImport({ family }: { family: string }) {
-  const fontValue = family.replace(/'|"/g, '').replace(/ /g, '+')
-  const html = `@import url('https://fonts.googleapis.com/css?family=${fontValue}&display=swap');`
-  return <style id={fontValue} dangerouslySetInnerHTML={{ __html: html }} />
+  if (SYSTEM_FONTS.has(family)) return null
+  const html = `@import url('${googleFontUrl(family)}');`
+  return <style id={googleFontValue(family)} dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+const fontStylesheets = new Map<string, Promise<void>>()
+
+const linkFontStylesheet = (family: string) => {
+  let loaded = fontStylesheets.get(family)
+  if (!loaded) {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = googleFontUrl(family)
+    loaded = new Promise<void>((resolve) => {
+      link.onload = () => resolve()
+      link.onerror = () => resolve()
+    })
+    document.head.appendChild(link)
+    fontStylesheets.set(family, loaded)
+  }
+  return loaded
+}
+
+// Adds a persistent stylesheet for a Google font (once per family) and waits
+// for the face to be usable, so canvas text measures and renders with it.
+export async function ensureFontLoaded(family: string) {
+  if (typeof document === 'undefined' || SYSTEM_FONTS.has(family)) return
+  await linkFontStylesheet(family)
+  try {
+    await document.fonts.load(`16px "${family}"`)
+  } catch (e) {
+    console.warn(`Failed to load font ${family}`, e)
+  }
 }
 
 const FontSelectorItemAttributes = {

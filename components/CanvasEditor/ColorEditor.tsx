@@ -3,18 +3,23 @@ import { Button, Tooltip, View } from 'reshaped'
 
 import css from './CanvasEditor.module.css'
 import type { FabricJSEditor } from './lib'
+import { STROKE } from './lib/defaultShapes'
 
-export function ColorEditor({ editor }: { editor: FabricJSEditor | undefined }) {
-  const [bgColor, setBgColor] = useState('#ffffff')
-  const [strokeColor, setStrokeColor] = useState('#000000')
+export function ColorEditor({
+  editor,
+  backgroundColor,
+  onBackgroundColorChange,
+}: {
+  editor: FabricJSEditor | undefined
+  backgroundColor: string
+  onBackgroundColorChange: (color: string) => void
+}) {
+  const [strokeColor, setStrokeColor] = useState(STROKE)
 
   const handleSetStrokeColor = useCallback(
     (color: string) => {
       if (!editor) return
-      if (!editor?.canvas.freeDrawingBrush) return
-      editor.canvas.freeDrawingBrush.color = color
       editor.setStrokeColor(color)
-      editor.canvas.renderAll()
       setStrokeColor(color)
     },
     [editor, setStrokeColor]
@@ -23,11 +28,10 @@ export function ColorEditor({ editor }: { editor: FabricJSEditor | undefined }) 
   const handleSetBackgroundColor = useCallback(
     (color: string) => {
       if (!editor) return
-      editor.canvas.backgroundColor = color
-      editor.canvas.renderAll()
-      setBgColor(color)
+      editor.setBackgroundColor(color)
+      onBackgroundColorChange(color)
     },
-    [editor, setBgColor]
+    [editor, onBackgroundColorChange]
   )
 
   return (
@@ -64,7 +68,7 @@ export function ColorEditor({ editor }: { editor: FabricJSEditor | undefined }) 
           >
             <input
               type="color"
-              value={bgColor}
+              value={backgroundColor}
               onChange={(e) => handleSetBackgroundColor(e.target.value)}
             />
           </Button>
