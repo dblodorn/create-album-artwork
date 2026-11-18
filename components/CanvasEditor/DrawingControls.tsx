@@ -58,7 +58,7 @@ export function DrawingControls({
             size="small"
             onClick={toggleDraw}
             icon={Draw}
-            color={isDrawing ? 'neutral' : 'inherit'}
+            color={isDrawing ? 'primary' : 'neutral'}
             rounded
             className={css.CircleButton}
             attributes={attributes}

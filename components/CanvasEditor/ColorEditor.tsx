@@ -38,8 +38,8 @@ export function ColorEditor({
     <View
       padding={1}
       gap={2}
-      borderColor="neutral"
-      backgroundColor="white"
+      borderColor="neutral-faded"
+      backgroundColor="elevation-raised"
       borderRadius="small"
     >
       <Tooltip text="Color" position="end">

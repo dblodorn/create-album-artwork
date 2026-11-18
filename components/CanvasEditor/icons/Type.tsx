@@ -3,10 +3,10 @@ import React from 'react'
 export function Type() {
   return (
     <svg height="16" width="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-      <g fill="#000000">
+      <g fill="currentColor">
         <path
           d="M9,4c0-1.103,0.897-2,2-2h1V0h-1C9.8,0,8.734,0.542,8,1.382C7.266,0.542,6.2,0,5,0H4v2h1 c1.103,0,2,0.897,2,2v1v4H4v2h3v1c0,1.103-0.897,2-2,2H4v2h1c1.2,0,2.266-0.542,3-1.382C8.734,15.458,9.8,16,11,16h1v-2h-1 c-1.103,0-2-0.897-2-2v-1h3V9H9V5V4z"
-          fill="#000000"
+          fill="currentColor"
         />
       </g>
     </svg>

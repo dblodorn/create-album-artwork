@@ -141,8 +141,8 @@ export function CanvasEditor() {
               <View
                 padding={1}
                 gap={2}
-                borderColor="neutral"
-                backgroundColor="white"
+                borderColor="neutral-faded"
+                backgroundColor="elevation-raised"
                 borderRadius="small"
               >
                 <Tooltip text="Select" position="end">
