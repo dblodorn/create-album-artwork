@@ -9,33 +9,32 @@ User ──▶ CanvasEditor.tsx (client)
            │
            ├─ toolbar: Select / ImagePicker / Text / FontSelector / DrawingControls
            ├─ ColorEditor (stroke + background)
-           └─ FabricJSCanvas ──▶ fabric.Canvas (fills parent div, resizes with window)
+           └─ FabricJSCanvas ──▶ fabric.Canvas (1000×1000 artboard, CSS-scaled to parent)
                                     │
                                     ▼
-                     useFabricJSEditor.buildEditor(canvas)
-                       typed API: addText/addCircle/setFillColor/…
+                     useFabricJSEditor.buildEditor(canvas)  (once per canvas)
+                       typed API: addText/setStrokeColor/setFont/commit/…
                                     │
-              object:modified|added|removed ──▶ useCanvasAutosave
+   object:modified|added|removed + commit() ──▶ useCanvasAutosave
                                     │            (500ms debounce)
                                     ▼
-                         localStorage["canvas-editor-autosave"]
+                         IndexedDB["canvas-editor-scene-v1"]
                          { canvasData: canvas.toJSON() }
 
-ExportControls ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(4) → PNG
+ExportControls ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(3) → 3000×3000 PNG
                  ──▶ downloadJSON = { canvasData } → .json file
-                 ──▶ loadJSON → canvas.loadFromJSON
+                 ──▶ loadJSON → restoreScene (drop blob: images, load fonts)
 ```
 
 - Everything is client-side. There is **no server state, no API routes, no DB**.
-- The canvas element is sized to its parent (square, `aspectRatio={1/1}`, max-width 700px wrapper). Export multiplies by 4 → roughly 2800×2800px PNG, comfortably above SoundCloud's 800×800 minimum / 3000×3000 recommended artwork size.
+- The canvas works in fixed 1000×1000 logical units and is only CSS-scaled to its square parent (max-width 700px wrapper). Export multiplies by 3 → a 3000×3000 PNG regardless of viewport.
+- Uploaded images are downscaled to ≤2048px and embedded as data URLs, so the scene (and exported JSON) is self-contained.
 - `preserveObjectStacking = true` — z-order only changes via explicit layer controls.
 
 ## 2. v0 gaps for the album-artwork use-case
 
 | Gap | Where | Fix |
 |-----|-------|-----|
-| Canvas is window-sized, not fixed 3000×3000 | `FabricJSCanvas.tsx` | Logical canvas at 1000×1000 (or 3000×3000), CSS-scaled; export multiplier relative to logical size |
-| Uploaded images are `blob:` URLs — lost on reload | `useImageUpload.tsx` | On autosave, images serialized by Fabric are object URLs → restore breaks. Upload to Spaces (or keep data-URL) before insert |
 | URL tab accepts anything | `ImagePicker.tsx` | Client-side: fine for rendering (canvas taint handled via `crossOrigin`). Server-side fetch later: port SSRF guards from `dmbk-world` `fal.ts` |
 | No export-to-URI | `ExportControls.tsx` | New "Publish" flow → API route → DO Spaces → public URL |
 | No AI generation | — | FAL.ai integration, see §3 |
@@ -86,13 +85,12 @@ Goal: one click → flattened PNG at a stable public URL → that URL is what ge
 
 ## 5. Suggested build order
 
-1. **Fix persistence**: upload inserted images (or embed data-URLs) so autosave restore survives reloads.
-2. **Fixed logical canvas** (1000×1000 logical, 3x export → 3000×3000 for SoundCloud).
-3. **`/api/publish` → Spaces** with the URL returned + copied to clipboard. This alone makes the tool useful end-to-end.
-4. **`/api/generate` → FAL FLUX text-to-image**, result into `onImageSelect`. New "Generate" tab in `ImagePicker`'s modal (it already has Tabs: Upload | URL → add Generate).
-5. **Img2img from canvas** + strength control.
-6. **LoRA styles** from lora-trainer's trained models.
-7. Optional: SoundCloud OAuth (auth-code) + direct "attach to track/playlist" flow.
+1. ~~Fix persistence~~ and ~~fixed logical canvas~~: done (data-URL images in IndexedDB; 1000×1000 artboard, 3000×3000 export).
+2. **`/api/publish` → Spaces** with the URL returned + copied to clipboard. This alone makes the tool useful end-to-end.
+3. **`/api/generate` → FAL FLUX text-to-image**, result into `onImageSelect`. New "Generate" tab in `ImagePicker`'s modal (it already has Tabs: Upload | URL → add Generate).
+4. **Img2img from canvas** + strength control.
+5. **LoRA styles** from lora-trainer's trained models.
+6. Optional: SoundCloud OAuth (auth-code) + direct "attach to track/playlist" flow.
 
 ## 6. Cross-repo touchpoint map
 

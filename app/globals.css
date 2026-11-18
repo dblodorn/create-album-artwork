@@ -7,7 +7,9 @@
 html,
 body {
   height: 100%;
-  overflow-x: hidden;
+  overflow: hidden;
+  /* No trackpad back-swipe or bounce while panning the workspace. */
+  overscroll-behavior: none;
 }
 
 body {

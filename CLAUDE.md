@@ -6,7 +6,7 @@ This file provides guidance to Claude Code when working in this repository.
 
 ## What this is
 
-A **web-based visual layout editor for creating album artwork** intended for SoundCloud publishing. Single-page Fabric.js canvas app (1:1 aspect ratio — album cover format) with text, images, freehand drawing, shapes, colors, and shadows. State persists to `localStorage`; export as PNG (4x multiplier) or JSON scene state.
+A **web-based visual layout editor for creating album artwork** intended for SoundCloud publishing. Single-page Fabric.js canvas app (1:1 aspect ratio — album cover format) with text, images, freehand drawing, shapes, colors, and shadows. Fixed 1000×1000 artboard, autosaved to IndexedDB; export as a 3000×3000 PNG or JSON scene state.
 
 Roadmap: integrate **generative AI** (via FAL.ai, mirroring the `lora-trainer` app's integration) so generated images land on the canvas, and **publish the final flattened image to an accessible URI** (DigitalOcean Spaces) that can be handed to SoundCloud as the track/playlist artwork.
 
@@ -16,9 +16,10 @@ Roadmap: integrate **generative AI** (via FAL.ai, mirroring the `lora-trainer` a
 npm run dev     # next dev
 npm run build   # next build
 npm run start   # next start
+npm run typecheck  # tsc --noEmit
 ```
 
-No tests, no lint configured. Deploys to Vercel (`create-album-artwork.vercel.app`) via the GitHub repo.
+No tests, no lint configured; run `typecheck` and `build` before committing. Deploys to Vercel (`create-album-artwork.vercel.app`) via the GitHub repo.
 
 ## Stack
 
@@ -39,36 +40,47 @@ app/
   page.tsx            # Client component → <App> → <CanvasEditor>
   App.tsx             # <Reshaped theme="slate"> provider wrapper
 components/CanvasEditor/
-  CanvasEditor.tsx    # Orchestrator: toolbar + canvas + export row
-  FabricJSCanvas.tsx  # <canvas> mount, resize observer, dispose
+  CanvasEditor.tsx    # Orchestrator: full-window layout — top bar, Workspace, floating panels
+  Workspace.tsx       # zoom/pan viewport hosting the canvas (wheel, Space/middle drag, ⌘ shortcuts)
+  FloatingPanel.tsx   # draggable pane; position persisted in localStorage per id
+  ZoomControls.tsx    # top-bar zoom −/%/+/Fit
+  FabricJSCanvas.tsx  # <canvas> mount: fixed artboard, PencilBrush
   ActiveItemControls  # scale/layer/delete for selected object
   ColorEditor         # stroke + canvas background color inputs
   DrawingControls     # free-draw toggle, line weight slider, brushes
   ExportControls      # PNG / JSON download, JSON load, clear
   FontSelector        # Google Fonts modal
   ImagePicker         # modal: Upload tab | URL tab
-  ImageUploader       # file input → object URL preview
+  ImageUploader       # file input → downscaled data URL preview
   ShadowControls      # shadow color/blur/offset (paths, images, text)
   lib/
     useFabricJSEditor.tsx  # hook: builds editor API over Canvas
     useEditorItems.ts      # selection state, keyboard shortcuts, z-order
-    useImageUpload.tsx     # local file → object URL
-    uploadCanvas.ts        # getCanvasBlob, download*, localStorage save/load
+    useImageUpload.tsx     # local file → downscaled (≤2048px) data URL
+    uploadCanvas.ts        # getCanvasBlob, download*, IndexedDB saveScene/loadScene, restoreScene
+    constants.ts           # ARTBOARD (1000), EXPORT_SIZE (3000), zoom limits, defaults
+    useViewport.ts         # zoom/pan state; starts fitted, refits on resize until user zooms/pans
+    canvasDisplay.ts       # setCanvasDisplaySize: backing store + Fabric zoom for on-screen size
+    keyboard.ts            # shouldIgnoreShortcut (canvas text editing / form fields)
+    objectTypes.ts         # isText/isImage/isPath (instanceof checks)
     scaleImageToCanvas.ts  # fit image into canvas (÷4 default)
     defaultShapes.ts       # CIRCLE/RECT/LINE/TEXT presets
 lib/
-  useCanvasAutosave.ts  # 500ms debounced localStorage on object events
-  googleFonts.tsx       # font list + <style> @import injector
-  useKeyPress.ts        # keydown/keyup boolean hook
+  useCanvasAutosave.ts  # 500ms debounced IndexedDB save; requestSave + restore
+  googleFonts.tsx       # font list, picker previews, ensureFontLoaded()
 ```
 
 ## Key patterns
 
-- **Editor API** (`useFabricJSEditor`): wraps the raw Fabric `Canvas` in a typed object (`addText`, `deleteSelected`, `setFillColor`, …). Built once `onReady` fires. All mutations go through this object or directly through `editor.canvas`.
-- **Autosave**: `useCanvasAutosave` listens to `object:modified/added/removed`, debounces 500ms, writes `canvas.toJSON()` to `localStorage` under `canvas-editor-autosave`. On mount, `loadFromLocalStorage` restores; if empty, background defaults to `#FFFFFF`.
-- **Image insertion**: `Image.fromURL(url, { crossOrigin: 'anonymous' })` → `scaleImageToCanvas` (fits at ¼ canvas size, centered) → `canvas.add` → `setActiveObject`. URL tab and upload tab both produce a URL string consumed by `onImageSelect`.
-- **Export**: `getCanvasBlob` renders `toCanvasElement(4)` (4x multiplier ≈ print-res) → PNG blob. JSON export is `{ canvasData: canvas.toJSON() }`.
-- **Keyboard**: `Backspace` delete, arrows = z-order (Up/Down = front/back, Left/Right = forward/backward), `Esc` deselect, `+/-` scale. Disabled on mobile UA.
+- **Artboard**: scene coordinates are always 1000×1000 units (`ARTBOARD`). The workspace zoom (`useViewport`, CSS px per unit, 10%–800%) drives `setCanvasDisplaySize`: the backing store follows the on-screen size (capped at `MAX_BACKSTORE` 2048, then CSS-stretched) and `canvas.setZoom(backing / ARTBOARD)` maps the artboard onto it, so text and paths stay sharp. **`canvas.width` is therefore not the artboard size** — use `ARTBOARD` for layout, and export divides by `canvas.width`. Zoom/viewport aren't serialized by `toJSON`. Panning moves the artboard with a CSS transform; Fabric recomputes its offset on every pointer event. Fabric 7 has no default brush; a `PencilBrush` is created on mount.
+- **Layout**: full-window app (`.App` fixed inset 0). Top bar (zoom + file actions), `Workspace`, and `FloatingPanel`s (Tools, Object). Panel positions live in `localStorage["canvas-editor-panel:<id>"]` (per-browser convenience only).
+- **Editor API** (`useFabricJSEditor`): wraps the raw Fabric `Canvas` in a typed object (`addText`, `deleteSelected`, `setStrokeColor`, `setBackgroundColor`, `setFont`, …). Built **once per canvas** (`useMemo`); colours and font live in refs, so the editor identity is stable. Any mutation made directly on `editor.canvas` that Fabric doesn't report via `object:added/removed/modified` (property `set()`, background, z-order, scaling) must call `editor.commit()`, which re-renders and schedules an autosave.
+- **Object types**: Fabric 7 reports `type` as the lowercased class name (`'textbox'`, not `'text'`). Use `isText`/`isImage`/`isPath` from `lib/objectTypes.ts`, never string compares.
+- **Autosave**: `useCanvasAutosave` debounces 500ms and writes `{ canvasData: canvas.toJSON() }` to IndexedDB (`idb-keyval`, key `canvas-editor-scene-v1`) on object events and `requestSave()` (wired to `editor.commit`). `restore()` loads it on mount, migrating the old `localStorage["canvas-editor-autosave"]` once; saves are suppressed while restoring. `restoreScene` drops images with dead `blob:` URLs up front and loads the scene's fonts before rendering. If nothing is saved, background defaults to `#FFFFFF`.
+- **Fonts**: `ensureFontLoaded(family)` adds a persistent Google Fonts `<link>` and awaits `document.fonts.load` before text is changed or restored. Picking a font with no text selected sets the font for the next text added.
+- **Image insertion**: uploads become downscaled data URLs (so they persist in the scene). `FabricImage.fromURL(url, { crossOrigin: 'anonymous' })` → `scaleImageToCanvas` (fits at ¼ canvas size, centered) → `canvas.add` → `setActiveObject`. URL tab and upload tab both produce a URL string consumed by `onImageSelect`.
+- **Export**: `getCanvasBlob` renders `toCanvasElement(EXPORT_SIZE / ARTBOARD)` → 3000×3000 PNG blob (Fabric skips selection controls on export). JSON export is `{ canvasData: canvas.toJSON() }`.
+- **Keyboard** (`useEditorItems`, one `keydown` listener): `Backspace`/`Delete` delete, arrows = z-order (Up/Down = front/back, Left/Right = forward/backward), `Esc` deselect, `+`/`=`/`-` scale. Ignored while editing canvas text or typing in a form field, and on mobile UA. Workspace: ⌘/Ctrl `=`/`-`/`0`/`1` zoom in/out/fit/100%, pinch or ⌘/Ctrl+wheel zooms at cursor, wheel pans, Space-drag or middle-drag pans.
 - **CORS**: images loaded with `crossOrigin: 'anonymous'` so canvas export isn't tainted. Any future remote-image source (AI-generated, Spaces-hosted) must send `Access-Control-Allow-Origin` headers.
 
 ## External integrations (planned / reference implementations)

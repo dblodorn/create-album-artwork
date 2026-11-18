@@ -3,10 +3,10 @@ import React from 'react'
 export function ScaleUp() {
   return (
     <svg height="16" width="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-      <g fill="#000000">
+      <g fill="currentColor">
         <path
           d="M15,0H1C0.448,0,0,0.448,0,1v14c0,0.552,0.448,1,1,1h14c0.552,0,1-0.448,1-1V1C16,0.448,15.552,0,15,0z M14,14H6v-3c0-0.552-0.448-1-1-1H2V2h12V14z"
-          fill="#000000"
+          fill="currentColor"
         />
         <polygon points="12,4 7,4 8.793,5.793 6.293,8.293 7.707,9.707 10.207,7.207 12,9 " />
       </g>

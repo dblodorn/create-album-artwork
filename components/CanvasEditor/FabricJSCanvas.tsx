@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { Canvas } from 'fabric'
+import { Canvas, PencilBrush } from 'fabric'
 
+import { ARTBOARD, DEFAULT_BRUSH_WIDTH } from './lib/constants'
+import { STROKE } from './lib/defaultShapes'
 import {
   type FabricJSEditor,
   type FabricJSEditorHook,
@@ -14,39 +16,32 @@ export interface Props {
 
 const FabricJSCanvas = ({ className, onReady }: Props) => {
   const canvasEl = useRef<HTMLCanvasElement>(null)
-  const canvasElParent = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!canvasEl.current) return
 
-    const canvas = new Canvas(canvasEl.current)
-    const setCurrentDimensions = () => {
-      canvas.setDimensions({
-        width: canvasElParent.current?.clientWidth || 0,
-        height: canvasElParent.current?.clientHeight || 0,
-      })
-      canvas.renderAll()
-    }
-    setCurrentDimensions()
+    // Scene coordinates are always ARTBOARD units; the workspace sets the
+    // on-screen size and zoom (see lib/canvasDisplay.ts).
+    const canvas = new Canvas(canvasEl.current, {
+      width: ARTBOARD,
+      height: ARTBOARD,
+      preserveObjectStacking: true,
+    })
 
-    const resizeCanvas = () => {
-      setCurrentDimensions()
-    }
+    // Fabric 7 doesn't create a brush by default.
+    canvas.freeDrawingBrush = new PencilBrush(canvas)
+    canvas.freeDrawingBrush.width = DEFAULT_BRUSH_WIDTH
+    canvas.freeDrawingBrush.color = STROKE
 
-    window.addEventListener('resize', resizeCanvas, false)
-
-    if (onReady) {
-      onReady(canvas)
-    }
+    onReady?.(canvas)
 
     return () => {
       canvas.dispose()
-      window.removeEventListener('resize', resizeCanvas)
     }
   }, [])
 
   return (
-    <div ref={canvasElParent} className={className}>
+    <div className={className}>
       <canvas ref={canvasEl} />
     </div>
   )

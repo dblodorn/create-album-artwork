@@ -1,14 +1,9 @@
-import { useEffect, useState } from 'react'
-import {
-  Canvas,
-  Circle,
-  FabricObject,
-  Line,
-  Rect,
-  Textbox,
-} from 'fabric'
+import { useMemo, useRef, useState } from 'react'
+import { Canvas, Circle, Line, Rect, Textbox } from 'fabric'
 
+import { ensureFontLoaded } from '@/lib/googleFonts'
 import { CIRCLE, FILL, LINE, RECTANGLE, STROKE, TEXT } from './defaultShapes'
+import { isText } from './objectTypes'
 
 export interface FabricJSEditor {
   canvas: Canvas
@@ -19,157 +14,159 @@ export interface FabricJSEditor {
   updateText: (text: string) => void
   deleteAll: () => void
   deleteSelected: () => void
-  fillColor: string
-  strokeColor: string
+  readonly fillColor: string
+  readonly strokeColor: string
+  readonly fontFamily: string
   setFillColor: (color: string) => void
   setStrokeColor: (color: string) => void
-  zoomIn: () => void
-  zoomOut: () => void
+  setBackgroundColor: (color: string) => void
+  setFont: (family: string) => Promise<void>
+  // Re-render and mark the scene as changed (schedules an autosave). Call it
+  // after any mutation made directly on `canvas` that Fabric doesn't report
+  // through `object:added/removed/modified`.
+  commit: () => void
+}
+
+interface EditorState {
+  fillColor: string
+  strokeColor: string
+  fontFamily: string
 }
 
 const buildEditor = (
   canvas: Canvas,
-  fillColor: string,
-  strokeColor: string,
-  _setFillColor: (color: string) => void,
-  _setStrokeColor: (color: string) => void,
-  scaleStep: number
+  state: EditorState,
+  onChange: () => void
 ): FabricJSEditor => {
+  const commit = () => {
+    canvas.requestRenderAll()
+    onChange()
+  }
+
   return {
     canvas,
     addCircle: () => {
-      const object = new Circle({
-        ...CIRCLE,
-        fill: fillColor,
-        stroke: strokeColor,
-      })
-      canvas.add(object)
+      canvas.add(
+        new Circle({ ...CIRCLE, fill: state.fillColor, stroke: state.strokeColor })
+      )
     },
     addRectangle: () => {
-      const object = new Rect({
-        ...RECTANGLE,
-        fill: fillColor,
-        stroke: strokeColor,
-      })
-      canvas.add(object)
+      canvas.add(
+        new Rect({ ...RECTANGLE, fill: state.fillColor, stroke: state.strokeColor })
+      )
     },
     addLine: () => {
-      const object = new Line(LINE.points, {
-        ...LINE.options,
-        stroke: strokeColor,
-      })
-      canvas.add(object)
+      canvas.add(new Line(LINE.points, { ...LINE.options, stroke: state.strokeColor }))
     },
     addText: (text: string) => {
-      const object = new Textbox(text, { ...TEXT, fill: strokeColor })
-      object.set({ text })
-      canvas.setActiveObject(object)
+      const object = new Textbox(text, {
+        ...TEXT,
+        fill: state.strokeColor,
+        fontFamily: state.fontFamily,
+      })
       canvas.add(object)
+      canvas.setActiveObject(object)
+      canvas.requestRenderAll()
     },
     updateText: (text: string) => {
-      const objects: FabricObject[] = canvas.getActiveObjects()
-      if (objects.length && (objects[0] as any).type === TEXT.type) {
-        const textObject = objects[0] as Textbox
-        textObject.set({ text })
-        canvas.renderAll()
-      }
+      const object = canvas.getActiveObject()
+      if (!isText(object)) return
+      object.set({ text })
+      commit()
     },
     deleteAll: () => {
-      canvas.getObjects().forEach((object) => canvas.remove(object))
       canvas.discardActiveObject()
-      canvas.renderAll()
+      canvas.remove(...canvas.getObjects())
+      commit()
     },
     deleteSelected: () => {
-      canvas.getActiveObjects().forEach((object) => canvas.remove(object))
+      const objects = canvas.getActiveObjects()
       canvas.discardActiveObject()
-      canvas.renderAll()
+      canvas.remove(...objects)
+      commit()
     },
-    fillColor,
-    strokeColor,
+    get fillColor() {
+      return state.fillColor
+    },
+    get strokeColor() {
+      return state.strokeColor
+    },
+    get fontFamily() {
+      return state.fontFamily
+    },
     setFillColor: (fill: string) => {
-      _setFillColor(fill)
+      state.fillColor = fill
       canvas.getActiveObjects().forEach((object) => object.set({ fill }))
-      canvas.renderAll()
+      commit()
     },
     setStrokeColor: (stroke: string) => {
-      _setStrokeColor(stroke)
+      state.strokeColor = stroke
+      if (canvas.freeDrawingBrush) canvas.freeDrawingBrush.color = stroke
       canvas.getActiveObjects().forEach((object) => {
-        if ((object as any).type === TEXT.type) {
+        if (isText(object)) {
           object.set({ fill: stroke })
           return
         }
         object.set({ stroke })
       })
-      canvas?.renderAll()
+      commit()
     },
-    zoomIn: () => {
-      const zoom = canvas.getZoom()
-      canvas.setZoom(zoom / scaleStep)
+    setBackgroundColor: (color: string) => {
+      canvas.backgroundColor = color
+      commit()
     },
-    zoomOut: () => {
-      const zoom = canvas.getZoom()
-      canvas.setZoom(zoom * scaleStep)
+    setFont: async (family: string) => {
+      state.fontFamily = family
+      const texts = canvas.getActiveObjects().filter(isText)
+      if (!texts.length) return
+      await ensureFontLoaded(family)
+      texts.forEach((text) => {
+        text.set({ fontFamily: family })
+        text.initDimensions()
+        text.setCoords()
+      })
+      commit()
     },
+    commit,
   }
 }
 
-interface FabricJSEditorState {
+export interface FabricJSEditorHook {
   editor?: FabricJSEditor
-}
-
-export interface FabricJSEditorHook extends FabricJSEditorState {
-  selectedObjects?: FabricObject[]
   onReady: (canvas: Canvas) => void
 }
 
 interface FabricJSEditorHookProps {
   defaultFillColor?: string
   defaultStrokeColor?: string
-  scaleStep?: number
+  defaultFontFamily?: string
+  onChange?: () => void
 }
 
 export const useFabricJSEditor = (
   props: FabricJSEditorHookProps = {}
 ): FabricJSEditorHook => {
-  const scaleStep = props.scaleStep || 0.5
-  const { defaultFillColor, defaultStrokeColor } = props
   const [canvas, setCanvas] = useState<null | Canvas>(null)
-  const [fillColor, setFillColor] = useState<string>(defaultFillColor || FILL)
-  const [strokeColor, setStrokeColor] = useState<string>(defaultStrokeColor || STROKE)
-  const [selectedObjects, setSelectedObject] = useState<FabricObject[]>([])
-  useEffect(() => {
-    const bindEvents = (canvas: Canvas) => {
-      canvas.on('selection:cleared', () => {
-        setSelectedObject([])
-      })
-      canvas.on('selection:created', (e: any) => {
-        setSelectedObject(e.selected)
-      })
-      canvas.on('selection:updated', (e: any) => {
-        setSelectedObject(e.selected)
-      })
-    }
-    if (canvas) {
-      bindEvents(canvas)
-    }
-  }, [canvas])
 
-  return {
-    selectedObjects,
-    onReady: (canvasReady: Canvas): void => {
-      setCanvas(canvasReady)
-    },
-    editor: canvas
-      ? buildEditor(
-          canvas,
-          fillColor,
-          strokeColor,
-          setFillColor,
-          setStrokeColor,
-          scaleStep
-        )
-      : undefined,
-  }
+  // Held in refs so the editor object is built once per canvas. A new editor
+  // identity on every render re-runs every effect that depends on it.
+  const stateRef = useRef<EditorState>({
+    fillColor: props.defaultFillColor || FILL,
+    strokeColor: props.defaultStrokeColor || STROKE,
+    fontFamily: props.defaultFontFamily || TEXT.fontFamily,
+  })
+  const onChangeRef = useRef(props.onChange)
+  onChangeRef.current = props.onChange
+
+  const editor = useMemo(
+    () =>
+      canvas
+        ? buildEditor(canvas, stateRef.current, () => onChangeRef.current?.())
+        : undefined,
+    [canvas]
+  )
+
+  return { editor, onReady: setCanvas }
 }
 
 export { buildEditor }

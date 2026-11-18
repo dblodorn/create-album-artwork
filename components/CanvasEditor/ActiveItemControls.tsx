@@ -31,12 +31,8 @@ export function ActiveItemControls({
       }}
       direction="row"
       gap={2}
-      position="relative"
-      insetEnd={0}
-      insetBottom={1}
-      paddingStart={1}
     >
-      <Tooltip text="Scale up" position="top">
+      <Tooltip text="Scale up" position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -50,7 +46,7 @@ export function ActiveItemControls({
           />
         )}
       </Tooltip>
-      <Tooltip text="Scale down" position="top">
+      <Tooltip text="Scale down" position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -64,7 +60,7 @@ export function ActiveItemControls({
           />
         )}
       </Tooltip>
-      <Tooltip text="Move layer up" position="top">
+      <Tooltip text="Move layer up" position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -78,7 +74,7 @@ export function ActiveItemControls({
           />
         )}
       </Tooltip>
-      <Tooltip text="Move layer down" position="top">
+      <Tooltip text="Move layer down" position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -92,7 +88,7 @@ export function ActiveItemControls({
           />
         )}
       </Tooltip>
-      <Tooltip text="Delete" position="top-end">
+      <Tooltip text="Delete" position="bottom">
         {(attributes) => (
           <Button
             size="small"

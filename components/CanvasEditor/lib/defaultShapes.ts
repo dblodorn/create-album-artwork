@@ -1,38 +1,40 @@
+import { ARTBOARD } from './constants'
+
 export const STROKE = '#000000'
 export const FILL = 'rgba(255, 255, 255, 0.0)'
 
 export const CIRCLE = {
-  radius: 20,
-  left: 100,
-  top: 100,
+  radius: 100,
+  left: ARTBOARD / 2 - 100,
+  top: ARTBOARD / 2 - 100,
   fill: FILL,
   stroke: STROKE,
 }
 
 export const RECTANGLE = {
-  left: 100,
-  top: 100,
+  left: ARTBOARD / 2 - 100,
+  top: ARTBOARD / 2 - 100,
   fill: FILL,
   stroke: STROKE,
-  width: 40,
-  height: 40,
+  width: 200,
+  height: 200,
   angle: 0,
 }
 
 export const LINE = {
-  points: [50, 100, 200, 200] as [number, number, number, number],
+  points: [250, 500, 750, 500] as [number, number, number, number],
   options: {
-    left: 170,
-    top: 150,
     stroke: STROKE,
+    strokeWidth: 4,
   },
 }
 
 export const TEXT = {
-  type: 'text',
-  left: 100,
-  top: 100,
-  fontSize: 16,
+  width: 600,
+  left: (ARTBOARD - 600) / 2,
+  top: ARTBOARD / 2 - 40,
+  fontSize: 64,
+  textAlign: 'center' as const,
   fontFamily: 'Arial',
   fill: STROKE,
 }

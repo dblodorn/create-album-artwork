@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricObject } from 'fabric'
 
-import { useKeyPress } from '@/lib/useKeyPress'
+import { shouldIgnoreShortcut } from './keyboard'
 import type { FabricJSEditor } from './useFabricJSEditor'
 
 function isMobileDevice() {
@@ -16,134 +16,121 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
 
   const [activeItem, setActiveItem] = useState<FabricObject | null>(null)
 
-  const isDeletedPressed = useKeyPress('Backspace')
-
   const deleteSelected = useCallback(() => {
-    if (!editor) return
     editor?.deleteSelected()
   }, [editor])
 
   const deleteAll = useCallback(() => {
-    if (!editor) return
     editor?.deleteAll()
   }, [editor])
 
+  const canvas = editor?.canvas
   useEffect(() => {
-    if (isDeletedPressed && !isMobile) {
-      deleteSelected()
-    }
-  }, [isDeletedPressed, deleteSelected, isMobile, activeItem])
+    if (!canvas) return
+    const syncActiveItem = () => setActiveItem(canvas.getActiveObject() || null)
+    const clearActiveItem = () => setActiveItem(null)
 
-  useEffect(() => {
-    if (!editor) return
-    editor.canvas.on('selection:created', () => {
-      setActiveItem(editor.canvas.getActiveObject() || null)
-    })
-    editor.canvas.on('selection:updated', () => {
-      setActiveItem(editor.canvas.getActiveObject() || null)
-    })
-    editor.canvas.on('selection:cleared', () => {
-      setActiveItem(null)
-    })
-  }, [editor, setActiveItem])
+    canvas.on('selection:created', syncActiveItem)
+    canvas.on('selection:updated', syncActiveItem)
+    canvas.on('selection:cleared', clearActiveItem)
+    return () => {
+      canvas.off('selection:created', syncActiveItem)
+      canvas.off('selection:updated', syncActiveItem)
+      canvas.off('selection:cleared', clearActiveItem)
+    }
+  }, [canvas])
 
   const moveItemUp = useCallback(() => {
     if (!editor || !activeItem) return
     editor.canvas.bringObjectForward(activeItem)
-    editor.canvas.renderAll()
+    editor.commit()
   }, [activeItem, editor])
 
   const moveItemDown = useCallback(() => {
     if (!editor || !activeItem) return
     editor.canvas.sendObjectBackwards(activeItem)
-    editor.canvas.renderAll()
+    editor.commit()
   }, [activeItem, editor])
 
   const moveItemToFront = useCallback(() => {
     if (!editor || !activeItem) return
     editor.canvas.bringObjectToFront(activeItem)
-    editor.canvas.renderAll()
+    editor.commit()
   }, [activeItem, editor])
 
   const moveItemToBack = useCallback(() => {
     if (!editor || !activeItem) return
     editor.canvas.sendObjectToBack(activeItem)
-    editor.canvas.renderAll()
+    editor.commit()
   }, [activeItem, editor])
-
-  const isUpArrowPressed = useKeyPress('ArrowUp')
-  const isDownArrowPressed = useKeyPress('ArrowDown')
-  const isBackArrowPressed = useKeyPress('ArrowLeft')
-  const isForwardArrowPressed = useKeyPress('ArrowRight')
-
-  useEffect(() => {
-    if (!editor || !activeItem) return
-    if (isUpArrowPressed) {
-      moveItemToFront()
-    }
-    if (isDownArrowPressed) {
-      moveItemToBack()
-    }
-    if (isBackArrowPressed) {
-      moveItemDown()
-    }
-    if (isForwardArrowPressed) {
-      moveItemUp()
-    }
-  }, [
-    isUpArrowPressed,
-    isDownArrowPressed,
-    isBackArrowPressed,
-    isForwardArrowPressed,
-    activeItem,
-    editor,
-    moveItemDown,
-    moveItemUp,
-    moveItemToFront,
-    moveItemToBack,
-    setActiveItem,
-  ])
-
-  const isEscapePressed = useKeyPress('Escape')
 
   const handleDeselectActiveObject = useCallback(() => {
     editor?.canvas.discardActiveObject()
-    editor?.canvas.renderAll()
+    editor?.canvas.requestRenderAll()
   }, [editor])
-
-  useEffect(() => {
-    if (isEscapePressed) {
-      handleDeselectActiveObject()
-    }
-  }, [isEscapePressed, handleDeselectActiveObject])
 
   const scaleActiveItemUpDown = useCallback(
     (direction: 'up' | 'down') => {
       if (!editor || !activeItem) return
-switch (direction) {
-      case 'up':
-        activeItem.scale((activeItem.scaleX || 1) * 1.1)
-        activeItem.setCoords()
-        break
-      case 'down':
-        activeItem.scale((activeItem.scaleX || 1) * 0.9)
-        activeItem.setCoords()
-        break
-    }
-      editor?.canvas.renderAll()
+      const factor = direction === 'up' ? 1.1 : 0.9
+      activeItem.scale((activeItem.scaleX || 1) * factor)
+      activeItem.setCoords()
+      editor.commit()
     },
     [activeItem, editor]
   )
 
-  const isPlusPressed = useKeyPress('+')
-  const isMinusPressed = useKeyPress('-')
+  // Latest handlers, read by a single long-lived keydown listener.
+  const actionsRef = useRef({
+    deleteSelected,
+    moveItemUp,
+    moveItemDown,
+    moveItemToFront,
+    moveItemToBack,
+    handleDeselectActiveObject,
+    scaleActiveItemUpDown,
+  })
+  actionsRef.current = {
+    deleteSelected,
+    moveItemUp,
+    moveItemDown,
+    moveItemToFront,
+    moveItemToBack,
+    handleDeselectActiveObject,
+    scaleActiveItemUpDown,
+  }
+
   useEffect(() => {
-    if (isPlusPressed) {
-      scaleActiveItemUpDown('up')
-    } else if (isMinusPressed) {
-      scaleActiveItemUpDown('down')
+    if (!canvas || isMobile) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (shouldIgnoreShortcut(e, canvas)) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+
+      const actions = actionsRef.current
+      const handlers: Record<string, () => void> = {
+        Backspace: actions.deleteSelected,
+        Delete: actions.deleteSelected,
+        ArrowUp: actions.moveItemToFront,
+        ArrowDown: actions.moveItemToBack,
+        ArrowLeft: actions.moveItemDown,
+        ArrowRight: actions.moveItemUp,
+        Escape: actions.handleDeselectActiveObject,
+        '+': () => actions.scaleActiveItemUpDown('up'),
+        '=': () => actions.scaleActiveItemUpDown('up'),
+        '-': () => actions.scaleActiveItemUpDown('down'),
+      }
+      const handler = handlers[e.key]
+      if (!handler) return
+      // Escape works with nothing selected; the rest need a selection.
+      if (e.key !== 'Escape' && !canvas.getActiveObject()) return
+      e.preventDefault()
+      handler()
     }
-  }, [isPlusPressed, isMinusPressed, scaleActiveItemUpDown])
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [canvas, isMobile])
 
   return {
     activeItem,
