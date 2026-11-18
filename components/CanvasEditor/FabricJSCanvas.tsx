@@ -16,12 +16,12 @@ export interface Props {
 
 const FabricJSCanvas = ({ className, onReady }: Props) => {
   const canvasEl = useRef<HTMLCanvasElement>(null)
-  const canvasElParent = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!canvasEl.current || !canvasElParent.current) return
+    if (!canvasEl.current) return
 
-    // Fixed logical size; only the CSS size follows the layout.
+    // Scene coordinates are always ARTBOARD units; the workspace sets the
+    // on-screen size and zoom (see lib/canvasDisplay.ts).
     const canvas = new Canvas(canvasEl.current, {
       width: ARTBOARD,
       height: ARTBOARD,
@@ -33,27 +33,15 @@ const FabricJSCanvas = ({ className, onReady }: Props) => {
     canvas.freeDrawingBrush.width = DEFAULT_BRUSH_WIDTH
     canvas.freeDrawingBrush.color = STROKE
 
-    const parent = canvasElParent.current
-    const fitToParent = () => {
-      const size = parent.clientWidth
-      if (!size) return
-      canvas.setDimensions({ width: size, height: size }, { cssOnly: true })
-    }
-    fitToParent()
-
-    const observer = new ResizeObserver(fitToParent)
-    observer.observe(parent)
-
     onReady?.(canvas)
 
     return () => {
-      observer.disconnect()
       canvas.dispose()
     }
   }, [])
 
   return (
-    <div ref={canvasElParent} className={className}>
+    <div className={className}>
       <canvas ref={canvasEl} />
     </div>
   )

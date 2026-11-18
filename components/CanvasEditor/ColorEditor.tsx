@@ -35,13 +35,7 @@ export function ColorEditor({
   )
 
   return (
-    <View
-      padding={1}
-      gap={2}
-      borderColor="neutral-faded"
-      backgroundColor="elevation-raised"
-      borderRadius="small"
-    >
+    <View gap={2}>
       <Tooltip text="Color" position="end">
         {(attributes) => (
           <Button

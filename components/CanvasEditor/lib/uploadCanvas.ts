@@ -2,7 +2,7 @@ import type { Canvas } from 'fabric'
 import { del, get, set } from 'idb-keyval'
 
 import { ensureFontLoaded } from '@/lib/googleFonts'
-import { ARTBOARD, EXPORT_SIZE } from './constants'
+import { EXPORT_SIZE } from './constants'
 import { isText } from './objectTypes'
 import type { FabricJSEditor } from './useFabricJSEditor'
 
@@ -81,8 +81,10 @@ export const getCanvasBlob = (
   type: 'image/png' | 'image/jpeg' = 'image/png'
 ): Promise<Blob> => {
   return new Promise((resolve, reject) => {
+    // The backing store tracks the on-screen size (see canvasDisplay.ts), so
+    // scale from the current width; Fabric's zoom maps the artboard onto it.
     // Fabric skips selection controls when rendering for export.
-    const canvasEl = editor.canvas.toCanvasElement(EXPORT_SIZE / ARTBOARD)
+    const canvasEl = editor.canvas.toCanvasElement(EXPORT_SIZE / editor.canvas.width)
     canvasEl.toBlob(
       (blob) =>
         blob ? resolve(blob) : reject(new Error('Could not generate canvas blob')),

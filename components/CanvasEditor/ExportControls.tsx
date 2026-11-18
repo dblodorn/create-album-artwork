@@ -49,8 +49,8 @@ export function ExportControls({
   }
 
   return (
-    <View gap={2} direction="row" padding={1}>
-      <Tooltip text="Download PNG" position="top">
+    <View gap={2} direction="row">
+      <Tooltip text="Download PNG" position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -64,7 +64,7 @@ export function ExportControls({
           </Button>
         )}
       </Tooltip>
-      <Tooltip text="Save JSON state" position="top">
+      <Tooltip text="Save JSON state" position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -78,7 +78,7 @@ export function ExportControls({
           </Button>
         )}
       </Tooltip>
-      <Tooltip text="Load JSON state" position="top">
+      <Tooltip text="Load JSON state" position="bottom">
         {(attributes) => (
           <>
             <input
@@ -101,7 +101,7 @@ export function ExportControls({
           </>
         )}
       </Tooltip>
-      <Tooltip text="Clear canvas" position="top">
+      <Tooltip text="Clear canvas" position="bottom">
         {(attributes) => (
           <Button
             size="small"

@@ -1,20 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricObject } from 'fabric'
 
+import { shouldIgnoreShortcut } from './keyboard'
 import type { FabricJSEditor } from './useFabricJSEditor'
 
 function isMobileDevice() {
   if (typeof navigator === 'undefined') return false
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
     navigator.userAgent
-  )
-}
-
-function isTypingTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false
-  return (
-    target.isContentEditable ||
-    ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
   )
 }
 
@@ -111,9 +104,7 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
     if (!canvas || isMobile) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Leave keys alone while typing into canvas text or a form field.
-      const active = canvas.getActiveObject() as (FabricObject & { isEditing?: boolean }) | undefined
-      if (active?.isEditing || isTypingTarget(e.target)) return
+      if (shouldIgnoreShortcut(e, canvas)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
 
       const actions = actionsRef.current

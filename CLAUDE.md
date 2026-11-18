@@ -40,8 +40,11 @@ app/
   page.tsx            # Client component → <App> → <CanvasEditor>
   App.tsx             # <Reshaped theme="slate"> provider wrapper
 components/CanvasEditor/
-  CanvasEditor.tsx    # Orchestrator: toolbar + canvas + export row
-  FabricJSCanvas.tsx  # <canvas> mount: fixed artboard, PencilBrush, ResizeObserver CSS scaling
+  CanvasEditor.tsx    # Orchestrator: full-window layout — top bar, Workspace, floating panels
+  Workspace.tsx       # zoom/pan viewport hosting the canvas (wheel, Space/middle drag, ⌘ shortcuts)
+  FloatingPanel.tsx   # draggable pane; position persisted in localStorage per id
+  ZoomControls.tsx    # top-bar zoom −/%/+/Fit
+  FabricJSCanvas.tsx  # <canvas> mount: fixed artboard, PencilBrush
   ActiveItemControls  # scale/layer/delete for selected object
   ColorEditor         # stroke + canvas background color inputs
   DrawingControls     # free-draw toggle, line weight slider, brushes
@@ -55,7 +58,10 @@ components/CanvasEditor/
     useEditorItems.ts      # selection state, keyboard shortcuts, z-order
     useImageUpload.tsx     # local file → downscaled (≤2048px) data URL
     uploadCanvas.ts        # getCanvasBlob, download*, IndexedDB saveScene/loadScene, restoreScene
-    constants.ts           # ARTBOARD (1000), EXPORT_SIZE (3000), defaults
+    constants.ts           # ARTBOARD (1000), EXPORT_SIZE (3000), zoom limits, defaults
+    useViewport.ts         # zoom/pan state; starts fitted, refits on resize until user zooms/pans
+    canvasDisplay.ts       # setCanvasDisplaySize: backing store + Fabric zoom for on-screen size
+    keyboard.ts            # shouldIgnoreShortcut (canvas text editing / form fields)
     objectTypes.ts         # isText/isImage/isPath (instanceof checks)
     scaleImageToCanvas.ts  # fit image into canvas (÷4 default)
     defaultShapes.ts       # CIRCLE/RECT/LINE/TEXT presets
@@ -66,14 +72,15 @@ lib/
 
 ## Key patterns
 
-- **Artboard**: the Fabric canvas is always 1000×1000 logical units (`ARTBOARD`). `FabricJSCanvas` only changes its CSS size (`setDimensions(..., { cssOnly: true })` from a `ResizeObserver`), so object positions never depend on the viewport. Fabric 7 has no default brush; a `PencilBrush` is created on mount.
+- **Artboard**: scene coordinates are always 1000×1000 units (`ARTBOARD`). The workspace zoom (`useViewport`, CSS px per unit, 10%–800%) drives `setCanvasDisplaySize`: the backing store follows the on-screen size (capped at `MAX_BACKSTORE` 2048, then CSS-stretched) and `canvas.setZoom(backing / ARTBOARD)` maps the artboard onto it, so text and paths stay sharp. **`canvas.width` is therefore not the artboard size** — use `ARTBOARD` for layout, and export divides by `canvas.width`. Zoom/viewport aren't serialized by `toJSON`. Panning moves the artboard with a CSS transform; Fabric recomputes its offset on every pointer event. Fabric 7 has no default brush; a `PencilBrush` is created on mount.
+- **Layout**: full-window app (`.App` fixed inset 0). Top bar (zoom + file actions), `Workspace`, and `FloatingPanel`s (Tools, Object). Panel positions live in `localStorage["canvas-editor-panel:<id>"]` (per-browser convenience only).
 - **Editor API** (`useFabricJSEditor`): wraps the raw Fabric `Canvas` in a typed object (`addText`, `deleteSelected`, `setStrokeColor`, `setBackgroundColor`, `setFont`, …). Built **once per canvas** (`useMemo`); colours and font live in refs, so the editor identity is stable. Any mutation made directly on `editor.canvas` that Fabric doesn't report via `object:added/removed/modified` (property `set()`, background, z-order, scaling) must call `editor.commit()`, which re-renders and schedules an autosave.
 - **Object types**: Fabric 7 reports `type` as the lowercased class name (`'textbox'`, not `'text'`). Use `isText`/`isImage`/`isPath` from `lib/objectTypes.ts`, never string compares.
 - **Autosave**: `useCanvasAutosave` debounces 500ms and writes `{ canvasData: canvas.toJSON() }` to IndexedDB (`idb-keyval`, key `canvas-editor-scene-v1`) on object events and `requestSave()` (wired to `editor.commit`). `restore()` loads it on mount, migrating the old `localStorage["canvas-editor-autosave"]` once; saves are suppressed while restoring. `restoreScene` drops images with dead `blob:` URLs up front and loads the scene's fonts before rendering. If nothing is saved, background defaults to `#FFFFFF`.
 - **Fonts**: `ensureFontLoaded(family)` adds a persistent Google Fonts `<link>` and awaits `document.fonts.load` before text is changed or restored. Picking a font with no text selected sets the font for the next text added.
 - **Image insertion**: uploads become downscaled data URLs (so they persist in the scene). `FabricImage.fromURL(url, { crossOrigin: 'anonymous' })` → `scaleImageToCanvas` (fits at ¼ canvas size, centered) → `canvas.add` → `setActiveObject`. URL tab and upload tab both produce a URL string consumed by `onImageSelect`.
 - **Export**: `getCanvasBlob` renders `toCanvasElement(EXPORT_SIZE / ARTBOARD)` → 3000×3000 PNG blob (Fabric skips selection controls on export). JSON export is `{ canvasData: canvas.toJSON() }`.
-- **Keyboard** (`useEditorItems`, one `keydown` listener): `Backspace`/`Delete` delete, arrows = z-order (Up/Down = front/back, Left/Right = forward/backward), `Esc` deselect, `+`/`=`/`-` scale. Ignored while editing canvas text or typing in a form field, and on mobile UA.
+- **Keyboard** (`useEditorItems`, one `keydown` listener): `Backspace`/`Delete` delete, arrows = z-order (Up/Down = front/back, Left/Right = forward/backward), `Esc` deselect, `+`/`=`/`-` scale. Ignored while editing canvas text or typing in a form field, and on mobile UA. Workspace: ⌘/Ctrl `=`/`-`/`0`/`1` zoom in/out/fit/100%, pinch or ⌘/Ctrl+wheel zooms at cursor, wheel pans, Space-drag or middle-drag pans.
 - **CORS**: images loaded with `crossOrigin: 'anonymous'` so canvas export isn't tainted. Any future remote-image source (AI-generated, Spaces-hosted) must send `Access-Control-Allow-Origin` headers.
 
 ## External integrations (planned / reference implementations)
