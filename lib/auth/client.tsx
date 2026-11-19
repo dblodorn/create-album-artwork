@@ -27,6 +27,11 @@ export type Viewer = {
   isAdmin: boolean
 }
 
+/** Gated features the server says this viewer can use. UI only. */
+export type Features = { backgroundRemoval: boolean }
+
+const NO_FEATURES: Features = { backgroundRemoval: false }
+
 export type SessionStatus = 'loading' | 'signed-in' | 'signed-out' | 'unavailable'
 
 /** Why a sign-in didn't produce a session, worded for the person signing in. */
@@ -36,6 +41,7 @@ type SessionValue = {
   viewer: Viewer | null
   status: SessionStatus
   isAdmin: boolean
+  features: Features
   signIn: (idToken: string) => Promise<void>
   signOut: () => Promise<void>
 }
@@ -45,14 +51,20 @@ const SessionContext = createContext<SessionValue | null>(null)
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [viewer, setViewer] = useState<Viewer | null>(null)
   const [status, setStatus] = useState<SessionStatus>('loading')
+  const [features, setFeatures] = useState<Features>(NO_FEATURES)
 
   useEffect(() => {
     let cancelled = false
     fetch('/api/session', { cache: 'no-store' })
       .then(async (res) => {
-        const body = (await res.json()) as { viewer: Viewer | null; error?: string }
+        const body = (await res.json()) as {
+          viewer: Viewer | null
+          features?: Features
+          error?: string
+        }
         if (cancelled) return
         setViewer(body.viewer)
+        setFeatures(body.viewer ? (body.features ?? NO_FEATURES) : NO_FEATURES)
         setStatus(
           body.viewer ? 'signed-in' : body.error === 'unavailable' ? 'unavailable' : 'signed-out'
         )
@@ -84,8 +96,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           : "Sign-in isn't available right now. Try again shortly."
       )
     }
-    const { viewer } = (await res.json()) as { viewer: Viewer }
+    const { viewer, features } = (await res.json()) as { viewer: Viewer; features?: Features }
     setViewer(viewer)
+    setFeatures(features ?? NO_FEATURES)
     setStatus('signed-in')
   }, [])
 
@@ -93,12 +106,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // The server clears the cookie even if the API can't be reached.
     await fetch('/api/session', { method: 'DELETE' }).catch(() => undefined)
     setViewer(null)
+    setFeatures(NO_FEATURES)
     setStatus('signed-out')
   }, [])
 
   const value = useMemo(
-    () => ({ viewer, status, isAdmin: viewer?.isAdmin ?? false, signIn, signOut }),
-    [viewer, status, signIn, signOut]
+    () => ({ viewer, status, isAdmin: viewer?.isAdmin ?? false, features, signIn, signOut }),
+    [viewer, status, features, signIn, signOut]
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

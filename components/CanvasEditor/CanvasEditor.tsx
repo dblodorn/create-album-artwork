@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Divider, Text, Tooltip, View, useToast } from 'reshaped'
 
 import { AccountMenu } from './AccountMenu'
+import { BackgroundRemovalModal } from './BackgroundRemovalModal'
 import { ActiveItemControls } from './ActiveItemControls'
 import css from './CanvasEditor.module.css'
 import { ColorEditor } from './ColorEditor'
@@ -21,7 +22,7 @@ import {
   useFabricJSEditor,
 } from './lib'
 import { DEFAULT_BACKGROUND } from './lib/constants'
-import { isText } from './lib/objectTypes'
+import { isImage, isText } from './lib/objectTypes'
 import { useCanvasLayers } from './lib/useCanvasLayers'
 import { useViewport } from './lib/useViewport'
 import { Workspace } from './Workspace'
@@ -98,6 +99,25 @@ export function CanvasEditor() {
       selectLayer(object)
     },
     [isDrawing, toggleDraw, selectLayer]
+  )
+
+  // The image layer the Remove background dialog is working on.
+  const [cutoutTarget, setCutoutTarget] = useState<FabricImage | null>(null)
+  const openRemoveBackground = useCallback(() => {
+    if (isImage(activeItem) && !isDrawing) setCutoutTarget(activeItem)
+  }, [activeItem, isDrawing])
+  const applyCutout = useCallback(
+    async (result: string, keepOriginal: boolean) => {
+      if (!editor || !cutoutTarget) return
+      try {
+        await editor.replaceImage(cutoutTarget, result, { keepOriginal })
+      } catch (err) {
+        console.error('Failed to apply cutout', err)
+        toast.show({ color: 'critical', text: "Couldn't apply the cutout. Try again." })
+        throw err
+      }
+    },
+    [editor, cutoutTarget, toast]
   )
 
   const handleSelect = useCallback(() => {
@@ -224,6 +244,7 @@ export function CanvasEditor() {
           deleteSelected={deleteSelected}
           scaleActiveItemUpDown={scaleActiveItemUpDown}
           isDrawing={isDrawing}
+          onRemoveBackground={openRemoveBackground}
         />
       </FloatingPanel>
 
@@ -237,8 +258,16 @@ export function CanvasEditor() {
           activeObject={layers.activeObject}
           onSelect={onSelectLayer}
           onMove={layers.moveTo}
+          onRemoveBackground={openRemoveBackground}
+          isDrawing={isDrawing}
         />
       </FloatingPanel>
+
+      <BackgroundRemovalModal
+        target={cutoutTarget}
+        onClose={() => setCutoutTarget(null)}
+        onApply={applyCutout}
+      />
     </div>
   )
 }

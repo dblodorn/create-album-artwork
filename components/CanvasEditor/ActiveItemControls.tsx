@@ -3,6 +3,7 @@ import { Button, Tooltip, View } from 'reshaped'
 
 import css from './CanvasEditor.module.css'
 import { LayerDown, LayerUp, ScaleDown, ScaleUp, Trash } from './icons'
+import { RemoveBackgroundButton } from './RemoveBackgroundButton'
 
 export function ActiveItemControls({
   isDrawing,
@@ -11,6 +12,7 @@ export function ActiveItemControls({
   deleteSelected,
   scaleActiveItemUpDown,
   activeItem,
+  onRemoveBackground,
 }: {
   isDrawing?: boolean
   moveItemUp: () => void
@@ -18,6 +20,7 @@ export function ActiveItemControls({
   deleteSelected: () => void
   scaleActiveItemUpDown: (direction: 'up' | 'down') => void
   activeItem: FabricObject | null
+  onRemoveBackground: () => void
 }) {
   return (
     <View
@@ -88,6 +91,11 @@ export function ActiveItemControls({
           />
         )}
       </Tooltip>
+      <RemoveBackgroundButton
+        activeItem={activeItem}
+        isDrawing={isDrawing}
+        onOpen={onRemoveBackground}
+      />
       <Tooltip text="Delete" position="bottom">
         {(attributes) => (
           <Button

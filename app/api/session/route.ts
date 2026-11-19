@@ -4,17 +4,19 @@ import {
   SignInRefusedError,
   revokeToken,
   sessionCookie,
+  type Viewer,
   signInWithGoogle,
   viewerForToken,
 } from '@/lib/auth/session'
 import { readSessionToken } from '@/lib/auth/viewer'
+import { canUseBackgroundRemoval } from '@/lib/fal/access'
 import { isSameOrigin } from '@/lib/http/sameOrigin'
 
 /*
  * The session, as the browser sees it.
  *
- *   GET            → { viewer }  the signed-in account, or null
- *   POST {idToken} → { viewer }  sign in with a Google ID token
+ *   GET            → { viewer, features }  the signed-in account, or null
+ *   POST {idToken} → { viewer, features }  sign in with a Google ID token
  *   DELETE         → { ok }      sign out
  *
  * The session token never reaches the browser's JavaScript: it's set here as
@@ -25,6 +27,12 @@ import { isSameOrigin } from '@/lib/http/sameOrigin'
 const respond = (status: number, body: object) =>
   Response.json(body, { status, headers: { 'cache-control': 'no-store' } })
 
+// Gated features this viewer can use. Only drives the UI: each feature's own
+// route checks again on the server.
+const featuresFor = (viewer: Viewer | null) => ({
+  backgroundRemoval: canUseBackgroundRemoval(viewer),
+})
+
 export async function GET(request: Request) {
   const token = await readSessionToken()
   try {
@@ -32,12 +40,12 @@ export async function GET(request: Request) {
     // A cookie whose session has ended is cleared rather than re-checked on
     // every load.
     if (token && !viewer) (await cookies()).set(sessionCookie(null, request))
-    return respond(200, { viewer })
+    return respond(200, { viewer, features: featuresFor(viewer) })
   } catch (error) {
     // The API is down: say so, but keep the cookie, so a blip doesn't sign
     // anyone out.
     console.error('[auth] Session check failed:', error)
-    return respond(503, { viewer: null, error: 'unavailable' })
+    return respond(503, { viewer: null, features: featuresFor(null), error: 'unavailable' })
   }
 }
 
@@ -57,7 +65,7 @@ export async function POST(request: Request) {
   try {
     const { token, viewer } = await signInWithGoogle(idToken)
     ;(await cookies()).set(sessionCookie(token, request))
-    return respond(200, { viewer })
+    return respond(200, { viewer, features: featuresFor(viewer) })
   } catch (error) {
     if (error instanceof SignInRefusedError) return respond(401, { error: 'refused' })
     console.error('[auth] Sign-in failed:', error)
