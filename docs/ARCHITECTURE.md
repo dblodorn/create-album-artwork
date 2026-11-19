@@ -9,6 +9,7 @@ User ──▶ CanvasEditor.tsx (client)
            │
            ├─ toolbar: Select / ImagePicker / Text / FontSelector / DrawingControls
            ├─ ColorEditor (stroke + background)
+           ├─ LayersPanel ◀── useCanvasLayers (canvas order, front first; rAF-batched)
            └─ FabricJSCanvas ──▶ fabric.Canvas (1000×1000 artboard, CSS-scaled to parent)
                                     │
                                     ▼
@@ -29,7 +30,15 @@ ExportControls ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(3) → 3
 - Everything is client-side except two routes: `/api/dmbk` (§1a) and `/api/session` (§1b). There is **no server state and no DB**; accounts live in the dmbk GraphQL API.
 - The canvas works in fixed 1000×1000 logical units and is only CSS-scaled to its square parent (max-width 700px wrapper). Export multiplies by 3 → a 3000×3000 PNG regardless of viewport.
 - Uploaded images are downscaled to ≤2048px and embedded as data URLs, so the scene (and exported JSON) is self-contained.
-- `preserveObjectStacking = true` — z-order only changes via explicit layer controls.
+- `preserveObjectStacking = true` — z-order only changes via explicit layer controls: the Layers panel (drag, Alt+↑/↓), the arrow-key shortcuts and the Object panel buttons.
+
+## 1c. Layers panel
+
+- **Source of truth is `canvas.getObjects()`.** `useCanvasLayers` keeps no copy: on any change it schedules one `requestAnimationFrame` rebuild that reverses the object list (front first) and derives each row's label (`layerLabel`) and kind. A scene load fires one remove/add per object, and the batch turns that into a single rebuild.
+- **Fabric fires nothing for z-order changes** (`moveObjectTo`, `bringObjectToFront`… only re-render). So the editor exposes `subscribe()`, which `commit()` notifies, and every z-order or property change that already calls `commit()` reaches the panel. The hook also listens to `object:added/removed/modified`, `text:changed` and the selection events.
+- **Row ids are session-only** (`layerIds.ts`, a `WeakMap`), so nothing is added to the scene and the save format is unchanged.
+- **Thumbnails** are `object.toDataURL` at a 40 px box, cached per object and dropped when that object is modified, its text changes, or it is in the selection during a `commit()`.
+- **Reordering:** `@dnd-kit` handles mouse and touch dragging. The panel handles keys itself: ↑/↓ move focus, Enter/Space select, and Alt+↑/↓ move the object one step immediately, announced through a live region. The panel root carries `data-editor-shortcuts="off"`, so `shouldIgnoreShortcut` keeps canvas shortcuts (delete, z-order, scale, Space-pan) from firing on keys typed there.
 
 ## 1a. dmbk GraphQL API (`/api/dmbk`)
 

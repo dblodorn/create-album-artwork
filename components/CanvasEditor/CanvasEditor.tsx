@@ -1,6 +1,6 @@
 'use client'
 
-import { FabricImage } from 'fabric'
+import { FabricImage, type FabricObject } from 'fabric'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Divider, Text, Tooltip, View, useToast } from 'reshaped'
 
@@ -14,6 +14,7 @@ import { FloatingPanel } from './FloatingPanel'
 import { FontSelector } from './FontSelector'
 import { Select, Type } from './icons'
 import { ImagePicker } from './ImagePicker'
+import { LayersPanel } from './LayersPanel'
 import {
   scaleImageToCanvas,
   useEditorItems,
@@ -21,6 +22,7 @@ import {
 } from './lib'
 import { DEFAULT_BACKGROUND } from './lib/constants'
 import { isText } from './lib/objectTypes'
+import { useCanvasLayers } from './lib/useCanvasLayers'
 import { useViewport } from './lib/useViewport'
 import { Workspace } from './Workspace'
 import { ZoomControls } from './ZoomControls'
@@ -87,6 +89,16 @@ export function CanvasEditor() {
     editor?.addText('Text')
     if (isDrawing) toggleDraw()
   }, [editor, toggleDraw, isDrawing])
+
+  const layers = useCanvasLayers(editor)
+  const { select: selectLayer } = layers
+  const onSelectLayer = useCallback(
+    (object: FabricObject) => {
+      if (isDrawing) toggleDraw()
+      selectLayer(object)
+    },
+    [isDrawing, toggleDraw, selectLayer]
+  )
 
   const handleSelect = useCallback(() => {
     if (!editor) return
@@ -212,6 +224,19 @@ export function CanvasEditor() {
           deleteSelected={deleteSelected}
           scaleActiveItemUpDown={scaleActiveItemUpDown}
           isDrawing={isDrawing}
+        />
+      </FloatingPanel>
+
+      <FloatingPanel
+        id="layers"
+        title="Layers"
+        defaultPosition={({ width }) => ({ x: window.innerWidth - width - 16, y: 136 })}
+      >
+        <LayersPanel
+          layers={layers.layers}
+          activeObject={layers.activeObject}
+          onSelect={onSelectLayer}
+          onMove={layers.moveTo}
         />
       </FloatingPanel>
     </div>
