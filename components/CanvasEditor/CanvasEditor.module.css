@@ -21,6 +21,37 @@
   z-index: 1;
 }
 
+/* ACCOUNT (top bar, right end) */
+.AccountSlot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--rs-unit-x2);
+  /* Reserved while the session loads, so the top bar doesn't shift. */
+  min-width: 96px;
+  height: 32px;
+}
+
+.GoogleButton {
+  height: 32px;
+  /* GIS renders an iframe that otherwise picks up the dark scheme's
+     opaque white background. */
+  color-scheme: light;
+}
+
+.AvatarButton {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+  &:focus-visible {
+    outline: var(--rs-outline);
+    outline-offset: 2px;
+  }
+}
+
 /* WORKSPACE */
 .Workspace {
   position: relative;

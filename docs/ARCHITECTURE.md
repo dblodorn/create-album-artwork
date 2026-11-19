@@ -26,7 +26,7 @@ ExportControls ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(3) → 3
                  ──▶ loadJSON → restoreScene (drop blob: images, load fonts)
 ```
 
-- Everything is client-side except one route, `/api/dmbk` (§1a). There is **no server state and no DB**.
+- Everything is client-side except two routes: `/api/dmbk` (§1a) and `/api/session` (§1b). There is **no server state and no DB**; accounts live in the dmbk GraphQL API.
 - The canvas works in fixed 1000×1000 logical units and is only CSS-scaled to its square parent (max-width 700px wrapper). Export multiplies by 3 → a 3000×3000 PNG regardless of viewport.
 - Uploaded images are downscaled to ≤2048px and embedded as data URLs, so the scene (and exported JSON) is self-contained.
 - `preserveObjectStacking = true` — z-order only changes via explicit layer controls.
@@ -41,17 +41,43 @@ LoraBrowser ──▶ dmbkQuery(op, vars)          lib/dmbk/client.ts (browser)
                     │  same-origin check (Sec-Fetch-Site, Origin/host fallback)
                     │  operation allowlist + variable validation   lib/dmbk/operations.ts (server-only)
                     ▼
+               callDmbkApi(query, vars, sessionToken)       lib/dmbk/api.ts (server-only)
+                    ▼
                DMBK_GRAPHQL_API_URL  + X-API-Key: DMBK_GRAPHQL_API_KEY  (10 s timeout)
+                                     + Authorization: Bearer <session>  (when signed in)
 ```
 
 - **Allowlist, not a proxy.** The browser names an operation (`LoraTrainings`, `LoraTrainingImages`); the query text lives only in `operations.ts`. Raw `query` text, unknown names and out-of-range variables get 400 without calling the API. Mutations can't be reached.
 - **Errors.** `{ data }` on success. A missing key is 503 `not_configured`; GraphQL errors, non-2xx (including a refused key), timeouts and network failures are 502 `upstream`. The cause is logged on the server, never returned. The tab shows "isn't set up" vs "couldn't reach" with Retry; the Upload and URL tabs are unaffected.
-- **The key never reaches the browser.** Both env vars are read only in `operations.ts`, which imports `server-only`, so a client import fails the build.
+- **The key never reaches the browser.** Both env vars are read only in `lib/dmbk/api.ts`, which imports `server-only`, so a client import fails the build. `callDmbkApi` is the single place the server calls the API; `/api/dmbk` and `lib/auth/session.ts` both use it.
+- **Viewer session.** When the session cookie is set, the call also carries it as the bearer. The current operations are public, so a missing, expired or forged session returns the same data (the API treats an invalid bearer as anonymous). Signed-in-only operations can be added later without changing the route.
 - **Pagination.** `useConnection(fetchPage, key)` (`lib/dmbk/useConnection.ts`) holds a Relay connection's items/cursor/status, appends on `loadMore()`, re-requests the failed page on `retry()`, and drops responses for a stale `key`. The UI asks for 18 LoRAs / 24 images per page (server caps: 30 / 48).
 - **Picked images are embedded.** Clicking a thumbnail runs `urlToDataURL` (CORS `fetch` → `blobToDataURL`, the same ≤2048px downscale uploads use) and hands the data URL to `onImageSelect`. The scene doesn't depend on the source URL (fal.media URLs that were never mirrored can vanish), and the canvas stays untainted. Both image hosts (DO Spaces CDN, fal.media) send `Access-Control-Allow-Origin: *`.
 - **Picker closing.** `onImageSelect` returns a promise that rejects (after its toast) when Fabric can't load the image; `ImagePicker` closes only on success and ignores picks while one is in flight.
 - **Adding an operation**: add its query text and variable validator to `OPERATIONS` in `lib/dmbk/operations.ts`, and its variables/result types to `Operations` in `lib/dmbk/client.ts`. Later API work (sign-in, the viewer's own images, publishing) extends this route rather than adding a new one.
 - **Data source.** A local run reads production data unless `DMBK_GRAPHQL_API_URL` is overridden; every operation here is read-only.
+
+## 1b. Google sign-in (`/api/session`)
+
+Accounts belong to the dmbk GraphQL API (Better Auth, shared with lora-trainer and dmbk-photo). It verifies the Google ID token, decides who may sign in (its `ALLOWED_EMAILS`) and who is an admin (`ADMIN_EMAILS`), and issues a revocable session token. This app keeps no accounts, allowlist or Google secret.
+
+```
+AccountMenu (top bar, right)        components/CanvasEditor/AccountMenu.tsx
+  GIS button (next/script, popup) ──▶ Google ID token
+  useViewer().signIn(idToken)        lib/auth/client.tsx  (SessionProvider in app/App.tsx)
+    POST /api/session { idToken }    app/api/session/route.ts  (same-origin check)
+      signInWithGoogle(idToken)      lib/auth/session.ts → callDmbkApi
+        ◀── { token, viewer }
+      Set-Cookie: album_artwork_session=<token>; HttpOnly; SameSite=Lax; Path=/; Max-Age=7d; Secure on https
+    ◀── { viewer }                   (the token is never in a response body)
+```
+
+- **Routes.** `GET /api/session` → `{ viewer }` (null when signed out; a cookie whose session has ended is cleared). `POST { idToken }` → `{ viewer }`, 401 `refused` when the API rejects the account, 400 for a bad body. `DELETE` revokes the session at the API (best effort) and clears the cookie. All `no-store`; POST and DELETE are same-origin only.
+- **API down.** `GET` returns 503 `unavailable` and keeps the cookie, so an outage doesn't sign anyone out; the button area shows the sign-in button. A viewer query that answers with GraphQL errors also counts as unavailable, never as signed out.
+- **Viewer.** `{ id, email, name, image, isAdmin }`. The avatar loads `image` (Google's picture) with `referrerpolicy="no-referrer"` and falls back to initials. Its menu shows name and email and has Sign out.
+- **Gating rule.** `useViewer()` in the browser only decides what UI to show. Anything that protects a feature checks on the server with `viewerFromRequest()` (fails closed to `null`) or `requireViewer({ admin? })` (viewer, or a ready 401/403 `Response`) from `lib/auth/viewer.ts`. Nothing is gated yet; every feature works signed out.
+- **Origins.** The shared OAuth client renders the Google button only on its authorized JavaScript origins: `https://sleeve.dmbk.io`, `https://create-album-artwork.vercel.app`, `http://localhost:3000`. **Vercel preview URLs can't sign in.**
+- **Local API.** Sessions are signed by the API's secret, so a session minted by a local API is anonymous on production (the app signs you out on the next load). Sign in again after switching `DMBK_GRAPHQL_API_URL`.
 
 ## 2. v0 gaps for the album-artwork use-case
 
