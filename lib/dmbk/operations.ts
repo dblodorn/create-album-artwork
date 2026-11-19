@@ -6,13 +6,9 @@ import 'server-only'
  * The browser sends `{ operation, variables }`; the query text lives only
  * here, so the route can do exactly what the editor does and nothing more.
  * Adding an operation means adding it below and its result type to
- * `lib/dmbk/client.ts`.
+ * `lib/dmbk/client.ts`. The call itself (key, session, timeout) is
+ * `callDmbkApi` in `lib/dmbk/api.ts`.
  */
-
-export const DEFAULT_API_URL = 'https://graphql.dmbk.network/graphql'
-
-export const apiUrl = () => process.env.DMBK_GRAPHQL_API_URL || DEFAULT_API_URL
-export const apiKey = () => process.env.DMBK_GRAPHQL_API_KEY || undefined
 
 type Variables = Record<string, unknown>
 

@@ -25,7 +25,7 @@ No tests, no lint configured; run `typecheck` and `build` before committing. Dep
 
 | Layer | Tech | Notes |
 |-------|------|-------|
-| Framework | Next.js 16.2 (App Router) | `app/` dir: one page (`page.tsx`) + one route handler (`api/dmbk`) |
+| Framework | Next.js 16.2 (App Router) | `app/` dir: one page (`page.tsx`) + two route handlers (`api/dmbk`, `api/session`) |
 | UI | React 19.2 + Reshaped 4.1 | `slate` theme, dark mode (`data-rs-color-mode="dark"`) |
 | Canvas | Fabric.js 7.4 | `Canvas`, `Textbox`, `Image`, free-draw brush |
 | Fonts | Google Fonts runtime `@import` | 51 families in `lib/googleFonts.tsx` |
@@ -38,8 +38,9 @@ No tests, no lint configured; run `typecheck` and `build` before committing. Dep
 app/
   layout.tsx          # Root: dark-mode slate theme, globals.css
   page.tsx            # Client component → <App> → <CanvasEditor>
-  App.tsx             # <Reshaped theme="slate"> provider wrapper
+  App.tsx             # <Reshaped theme="slate"> + <SessionProvider> wrapper
   api/dmbk/route.ts   # POST { operation, variables } → dmbk GraphQL API with X-API-Key (allowlisted ops only)
+  api/session/route.ts # GET { viewer } | POST { idToken } sign in | DELETE sign out; HTTP-only session cookie
 components/CanvasEditor/
   CanvasEditor.tsx    # Orchestrator: full-window layout — top bar, Workspace, floating panels
   Workspace.tsx       # zoom/pan viewport hosting the canvas (wheel, Space/middle drag, ⌘ shortcuts)
@@ -50,6 +51,7 @@ components/CanvasEditor/
   ColorEditor         # stroke + canvas background color inputs
   DrawingControls     # free-draw toggle, line weight slider, brushes
   ExportControls      # PNG / JSON download, JSON load, clear
+  AccountMenu         # top bar, right: Google sign-in button, or avatar + menu (name, email, Sign out)
   FontSelector        # Google Fonts modal
   ImagePicker         # modal: Upload tab | URL tab | LoRA tab; closes only once the image is added
   LoraBrowser         # LoRA tab: lora-trainer LoRAs → their images → pick embeds as data URL
@@ -70,8 +72,14 @@ components/CanvasEditor/
 lib/
   useCanvasAutosave.ts  # 500ms debounced IndexedDB save; requestSave + restore
   googleFonts.tsx       # font list, picker previews, ensureFontLoaded()
+  auth/
+    session.ts          # server-only: Viewer type, cookie options, viewerForToken, signInWithGoogle, revokeToken
+    viewer.ts           # server-only: readSessionToken, viewerFromRequest (fails closed), requireViewer({ admin? })
+    client.tsx          # browser: SessionProvider + useViewer() → { viewer, status, isAdmin, signIn, signOut }
+  http/sameOrigin.ts    # isSameOrigin(request): Sec-Fetch-Site, then Origin/host
   dmbk/
-    operations.ts       # server-only: allowlisted query text + variable validators, env reads
+    api.ts              # server-only: callDmbkApi(query, vars, token?) — env reads, X-API-Key, bearer, timeout
+    operations.ts       # server-only: allowlisted query text + variable validators
     client.ts           # browser: dmbkQuery(op, vars) → /api/dmbk, hand-written result types, DmbkError
     useConnection.ts    # paginated Relay connection: items, loadMore, retry, stale-key drop
 ```
@@ -86,6 +94,7 @@ lib/
 - **Fonts**: `ensureFontLoaded(family)` adds a persistent Google Fonts `<link>` and awaits `document.fonts.load` before text is changed or restored. Picking a font with no text selected sets the font for the next text added.
 - **Image insertion**: uploads and LoRA picks become downscaled data URLs (so they persist in the scene and don't depend on the source URL). `FabricImage.fromURL(url, { crossOrigin: 'anonymous' })` → `scaleImageToCanvas` (fits at ¼ canvas size; returns the top-left corner, so `onImageSelect` adds half the size because Fabric 7 positions by centre) → `canvas.add` → `setActiveObject`. Every tab produces a string consumed by `onImageSelect`, which returns a promise that rejects after its toast; `ImagePicker` closes only on success. The URL tab still passes the remote URL through as-is.
 - **dmbk GraphQL API** (`/api/dmbk`): the browser posts `{ operation, variables }`; the route checks same-origin, looks the operation up in `lib/dmbk/operations.ts` (raw `query` text and unknown names → 400), and forwards with `X-API-Key` and a 10 s timeout. Missing key → 503 `not_configured`; any upstream failure → 502 `upstream` (cause logged server-side only). **To add an operation**, add its query text + validator to `OPERATIONS` in `operations.ts` and its types to `Operations` in `client.ts`. A local run reads production data unless `DMBK_GRAPHQL_API_URL` is overridden. Details in `docs/ARCHITECTURE.md` §1a.
+- **Sign-in** (`/api/session`, details in `docs/ARCHITECTURE.md` §1b): the GIS button posts Google's ID token to `/api/session`, which trades it with the dmbk API (`signInWithGoogle`) and stores the API's session token in the `album_artwork_session` cookie (HttpOnly, SameSite=Lax, 7 days, Secure on https). The API owns accounts and the allowlist; this app keeps no Google secret. `/api/dmbk` forwards the session as `Authorization: Bearer`. **Gates check on the server** with `viewerFromRequest()`/`requireViewer()` from `lib/auth/viewer.ts`; `useViewer()` only drives UI. Nothing is gated yet. Vercel preview URLs can't sign in (not authorized origins on the shared OAuth client). A session from a local API is anonymous on production; sign in again after switching `DMBK_GRAPHQL_API_URL`.
 - **Export**: `getCanvasBlob` renders `toCanvasElement(EXPORT_SIZE / ARTBOARD)` → 3000×3000 PNG blob (Fabric skips selection controls on export). JSON export is `{ canvasData: canvas.toJSON() }`.
 - **Keyboard** (`useEditorItems`, one `keydown` listener): `Backspace`/`Delete` delete, arrows = z-order (Up/Down = front/back, Left/Right = forward/backward), `Esc` deselect, `+`/`=`/`-` scale. Ignored while editing canvas text or typing in a form field, and on mobile UA. Workspace: ⌘/Ctrl `=`/`-`/`0`/`1` zoom in/out/fit/100%, pinch or ⌘/Ctrl+wheel zooms at cursor, wheel pans, Space-drag or middle-drag pans.
 - **CORS**: images loaded with `crossOrigin: 'anonymous'` so canvas export isn't tainted. Any future remote-image source (AI-generated, Spaces-hosted) must send `Access-Control-Allow-Origin` headers.
@@ -132,9 +141,10 @@ In use now (see `.env.example`):
 ```
 DMBK_GRAPHQL_API_URL=     # optional; defaults to https://graphql.dmbk.network/graphql
 DMBK_GRAPHQL_API_KEY=     # this app's client key (dmbk-graphql-api: npm run api-client -- create create-album-artwork)
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=  # shared dmbk OAuth client (same as lora-trainer); public
 ```
 
-Without the key only the LoRA tab breaks (it shows "not set up").
+Without the key the LoRA tab shows "not set up" and sign-in fails (the API calls need it). Without the client ID the top bar shows "Sign-in unavailable". Everything else works.
 
 When AI/publish lands:
 

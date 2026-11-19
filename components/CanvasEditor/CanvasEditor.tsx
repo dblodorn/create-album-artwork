@@ -4,6 +4,7 @@ import { FabricImage } from 'fabric'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Divider, Text, Tooltip, View, useToast } from 'reshaped'
 
+import { AccountMenu } from './AccountMenu'
 import { ActiveItemControls } from './ActiveItemControls'
 import css from './CanvasEditor.module.css'
 import { ColorEditor } from './ColorEditor'
@@ -135,6 +136,7 @@ export function CanvasEditor() {
           {editor && (
             <ExportControls editor={editor} onSceneLoaded={syncFromCanvas} />
           )}
+          <AccountMenu />
         </View>
       </header>
 
