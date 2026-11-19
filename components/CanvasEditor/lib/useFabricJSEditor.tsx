@@ -25,6 +25,8 @@ export interface FabricJSEditor {
   // after any mutation made directly on `canvas` that Fabric doesn't report
   // through `object:added/removed/modified`.
   commit: () => void
+  // Called after every commit(). Returns an unsubscribe function.
+  subscribe: (listener: () => void) => () => void
 }
 
 interface EditorState {
@@ -38,9 +40,11 @@ const buildEditor = (
   state: EditorState,
   onChange: () => void
 ): FabricJSEditor => {
+  const listeners = new Set<() => void>()
   const commit = () => {
     canvas.requestRenderAll()
     onChange()
+    listeners.forEach((listener) => listener())
   }
 
   return {
@@ -128,6 +132,12 @@ const buildEditor = (
       commit()
     },
     commit,
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
   }
 }
 

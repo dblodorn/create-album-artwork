@@ -125,6 +125,103 @@
   padding: var(--rs-unit-x2);
 }
 
+/* LAYERS */
+.Layers {
+  width: 200px;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: calc(var(--rs-unit-x2) * -1);
+  padding: var(--rs-unit-x1);
+}
+
+.LayersEmpty {
+  width: 200px;
+  padding: var(--rs-unit-x2) 0;
+  text-align: center;
+}
+
+.LayerList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.LayerRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--rs-unit-x2);
+  padding: var(--rs-unit-x1);
+  border-radius: var(--rs-radius-small);
+  cursor: grab;
+  touch-action: manipulation;
+  outline: none;
+
+  &:hover {
+    background: var(--rs-color-background-neutral-faded);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--rs-color-border-primary);
+    outline-offset: -2px;
+  }
+
+  &[data-selected] {
+    background: var(--rs-color-background-neutral);
+    box-shadow: inset 3px 0 0 var(--rs-color-border-primary);
+  }
+
+  &[data-dragging] {
+    z-index: 1;
+    cursor: grabbing;
+    background: var(--rs-color-background-elevation-overlay);
+    box-shadow: var(--rs-shadow-raised);
+  }
+}
+
+.LayerThumb {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--rs-radius-small);
+  overflow: hidden;
+  /* Mid-grey checkerboard so both white and black content stay visible. */
+  background-color: #8c8c8c;
+  background-image:
+    linear-gradient(45deg, #6e6e6e 25%, transparent 25%),
+    linear-gradient(-45deg, #6e6e6e 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #6e6e6e 75%),
+    linear-gradient(-45deg, transparent 75%, #6e6e6e 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+
+  & img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+  }
+}
+
+.LayerLabel {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.VisuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* IMAGE GRID */
 .ImageGrid {
   display: grid;
