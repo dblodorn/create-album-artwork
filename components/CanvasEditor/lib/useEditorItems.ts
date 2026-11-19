@@ -1,19 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { FabricObject } from 'fabric'
 
-import { shouldIgnoreShortcut } from './keyboard'
 import type { FabricJSEditor } from './useFabricJSEditor'
 
-function isMobileDevice() {
-  if (typeof navigator === 'undefined') return false
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent
-  )
-}
-
+// Selection state and the actions on it. Keys are handled by useEditorShortcuts.
 export function useEditorItems(editor: FabricJSEditor | undefined) {
-  const isMobile = useMemo(() => isMobileDevice(), [])
-
   const [activeItem, setActiveItem] = useState<FabricObject | null>(null)
 
   const deleteSelected = useCallback(() => {
@@ -43,25 +34,25 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
   const moveItemUp = useCallback(() => {
     if (!editor || !activeItem) return
     editor.canvas.bringObjectForward(activeItem)
-    editor.commit()
+    editor.commit('Arrange')
   }, [activeItem, editor])
 
   const moveItemDown = useCallback(() => {
     if (!editor || !activeItem) return
     editor.canvas.sendObjectBackwards(activeItem)
-    editor.commit()
+    editor.commit('Arrange')
   }, [activeItem, editor])
 
   const moveItemToFront = useCallback(() => {
     if (!editor || !activeItem) return
     editor.canvas.bringObjectToFront(activeItem)
-    editor.commit()
+    editor.commit('Arrange')
   }, [activeItem, editor])
 
   const moveItemToBack = useCallback(() => {
     if (!editor || !activeItem) return
     editor.canvas.sendObjectToBack(activeItem)
-    editor.commit()
+    editor.commit('Arrange')
   }, [activeItem, editor])
 
   const handleDeselectActiveObject = useCallback(() => {
@@ -75,62 +66,10 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
       const factor = direction === 'up' ? 1.1 : 0.9
       activeItem.scale((activeItem.scaleX || 1) * factor)
       activeItem.setCoords()
-      editor.commit()
+      editor.commit('Scale')
     },
     [activeItem, editor]
   )
-
-  // Latest handlers, read by a single long-lived keydown listener.
-  const actionsRef = useRef({
-    deleteSelected,
-    moveItemUp,
-    moveItemDown,
-    moveItemToFront,
-    moveItemToBack,
-    handleDeselectActiveObject,
-    scaleActiveItemUpDown,
-  })
-  actionsRef.current = {
-    deleteSelected,
-    moveItemUp,
-    moveItemDown,
-    moveItemToFront,
-    moveItemToBack,
-    handleDeselectActiveObject,
-    scaleActiveItemUpDown,
-  }
-
-  useEffect(() => {
-    if (!canvas || isMobile) return
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (shouldIgnoreShortcut(e, canvas)) return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-
-      const actions = actionsRef.current
-      const handlers: Record<string, () => void> = {
-        Backspace: actions.deleteSelected,
-        Delete: actions.deleteSelected,
-        ArrowUp: actions.moveItemToFront,
-        ArrowDown: actions.moveItemToBack,
-        ArrowLeft: actions.moveItemDown,
-        ArrowRight: actions.moveItemUp,
-        Escape: actions.handleDeselectActiveObject,
-        '+': () => actions.scaleActiveItemUpDown('up'),
-        '=': () => actions.scaleActiveItemUpDown('up'),
-        '-': () => actions.scaleActiveItemUpDown('down'),
-      }
-      const handler = handlers[e.key]
-      if (!handler) return
-      // Escape works with nothing selected; the rest need a selection.
-      if (e.key !== 'Escape' && !canvas.getActiveObject()) return
-      e.preventDefault()
-      handler()
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [canvas, isMobile])
 
   return {
     activeItem,

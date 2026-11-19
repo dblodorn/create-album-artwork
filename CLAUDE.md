@@ -17,9 +17,13 @@ npm run dev     # next dev
 npm run build   # next build
 npm run start   # next start
 npm run typecheck  # tsc --noEmit
+npm test           # vitest run (unit tests)
+npm run test:watch # vitest in watch mode
 ```
 
-No tests, no lint configured; run `typecheck` and `build` before committing. Deploys to Vercel (`create-album-artwork.vercel.app`) via the GitHub repo.
+No lint configured; run `typecheck`, `test` and `build` before committing.
+
+**Tests** (Vitest 5, `vitest.config.ts`): `*.test.ts(x)` files sit next to the code they test. Default environment is Node; add `// @vitest-environment jsdom` at the top of a file that needs the DOM or a Fabric canvas. `test/canvasStub.ts` gives jsdom a no-op 2D context, so Fabric's object model, stacking, selection and `clone()` work under test but nothing is painted (assert on objects and properties, never pixels). `server-only` is aliased to an empty module, and `@/` resolves as in the app. Keep logic that's worth testing in pure functions or small classes (no React), and test hooks and UI in the browser. Deploys to Vercel (`create-album-artwork.vercel.app`) via the GitHub repo.
 
 ## Stack
 
@@ -48,13 +52,16 @@ components/CanvasEditor/
   Workspace.tsx       # zoom/pan viewport hosting the canvas (wheel, Space/middle drag, ⌘ shortcuts)
   FloatingPanel.tsx   # draggable pane; position persisted in localStorage per id
   ZoomControls.tsx    # top-bar zoom −/%/+/Fit
+  AppMenu.tsx         # top bar, left: 🎨 menu → Changelog… (ChangelogModal) | View on GitHub
+  FileMenu.tsx        # File menu: Download PNG, Save JSON, Load JSON… (resets history), Clear canvas
+  EditMenu.tsx        # Edit menu rendered from useEditCommands: Undo/Redo, clipboard, Arrange, with shortcuts
+  ChangelogModal.tsx  # fetches /api/changelog once, lists entries newest first
   LayersPanel.tsx     # Layers pane: rows front-first, selection sync, dnd-kit drag, Alt+↑/↓ keyboard reorder
   LayerRow.tsx        # one sortable row: thumbnail + derived label
   FabricJSCanvas.tsx  # <canvas> mount: fixed artboard, PencilBrush
   ActiveItemControls  # scale/layer/delete for selected object
   ColorEditor         # stroke + canvas background color inputs
   DrawingControls     # free-draw toggle, line weight slider, brushes
-  ExportControls      # PNG / JSON download, JSON load, clear
   AccountMenu         # top bar, right: Google sign-in button, or avatar + menu (name, email, Sign out)
   FontSelector        # Google Fonts modal
   ImagePicker         # modal: Upload tab | URL tab | LoRA tab; closes only once the image is added
@@ -65,7 +72,14 @@ components/CanvasEditor/
   ShadowControls      # shadow color/blur/offset (paths, images, text)
   lib/
     useFabricJSEditor.tsx  # hook: builds editor API over Canvas
-    useEditorItems.ts      # selection state, keyboard shortcuts, z-order
+    useEditorItems.ts      # selection state + actions (delete, scale, z-order); no keys
+    useEditorShortcuts.ts  # the one keydown listener: matchShortcut → commands / nudge / layer stepping
+    commands.ts            # pure: matchShortcut (Illustrator map), shortcutLabel, commandState, MENU_GROUPS
+    useEditCommands.ts     # Edit commands (label, shortcut, enabled, run) for menu + keys; nudge
+    history.ts             # pure: HistoryStack, captureSnapshot/restoreSnapshot (live-object mementos)
+    useHistory.ts          # records undo steps per frame from Fabric events + commit(label); transaction()
+    clipboard.ts           # Clipboard: copy with absolute transforms, paste / in front / in back / in place
+    layersHover.ts         # pointer-over-Layers flag (↑/↓ step through layers while hovered)
     useCanvasLayers.ts     # layer list derived from canvas order (rAF-batched), thumbnails, select/moveTo
     layerIds.ts            # session-only WeakMap ids for objects (never serialized)
     layerLabel.ts          # derived row label/kind: text content | Image | Drawing | Shape
@@ -104,7 +118,7 @@ lib/
 ## Key patterns
 
 - **Artboard**: scene coordinates are always 1000×1000 units (`ARTBOARD`). The workspace zoom (`useViewport`, CSS px per unit, 10%–800%) drives `setCanvasDisplaySize`: the backing store follows the on-screen size (capped at `MAX_BACKSTORE` 2048, then CSS-stretched) and `canvas.setZoom(backing / ARTBOARD)` maps the artboard onto it, so text and paths stay sharp. **`canvas.width` is therefore not the artboard size** — use `ARTBOARD` for layout, and export divides by `canvas.width`. Zoom/viewport aren't serialized by `toJSON`. Panning moves the artboard with a CSS transform; Fabric recomputes its offset on every pointer event. Fabric 7 has no default brush; a `PencilBrush` is created on mount.
-- **Layout**: full-window app (`.App` fixed inset 0). Top bar (zoom + file actions), `Workspace`, and `FloatingPanel`s (Tools, Object, Layers). Panel positions live in `localStorage["canvas-editor-panel:<id>"]` (per-browser convenience only).
+- **Layout**: full-window app (`.App` fixed inset 0). Top bar (🎨/File/Edit menus, zoom, account), `Workspace`, and `FloatingPanel`s (Tools, Object, Layers). Panel positions live in `localStorage["canvas-editor-panel:<id>"]` (per-browser convenience only).
 - **Editor API** (`useFabricJSEditor`): wraps the raw Fabric `Canvas` in a typed object (`addText`, `deleteSelected`, `setStrokeColor`, `setBackgroundColor`, `setFont`, …). Built **once per canvas** (`useMemo`); colours and font live in refs, so the editor identity is stable. Any mutation made directly on `editor.canvas` that Fabric doesn't report via `object:added/removed/modified` (property `set()`, background, z-order, scaling) must call `editor.commit()`, which re-renders, schedules an autosave and notifies `editor.subscribe()` listeners (the Layers panel relies on this, since Fabric fires no event for z-order changes).
 - **Object types**: Fabric 7 reports `type` as the lowercased class name (`'textbox'`, not `'text'`). Use `isText`/`isImage`/`isPath` from `lib/objectTypes.ts`, never string compares.
 - **Autosave**: `useCanvasAutosave` debounces 500ms and writes `{ canvasData: canvas.toJSON() }` to IndexedDB (`idb-keyval`, key `canvas-editor-scene-v1`) on object events and `requestSave()` (wired to `editor.commit`). `restore()` loads it on mount, migrating the old `localStorage["canvas-editor-autosave"]` once; saves are suppressed while restoring. `restoreScene` drops images with dead `blob:` URLs up front and loads the scene's fonts before rendering. If nothing is saved, background defaults to `#FFFFFF`.
@@ -113,9 +127,12 @@ lib/
 - **dmbk GraphQL API** (`/api/dmbk`): the browser posts `{ operation, variables }`; the route checks same-origin, looks the operation up in `lib/dmbk/operations.ts` (raw `query` text and unknown names → 400), and forwards with `X-API-Key` and a 10 s timeout. Missing key → 503 `not_configured`; any upstream failure → 502 `upstream` (cause logged server-side only). **To add an operation**, add its query text + validator to `OPERATIONS` in `operations.ts` and its types to `Operations` in `client.ts`. A local run reads production data unless `DMBK_GRAPHQL_API_URL` is overridden. Details in `docs/ARCHITECTURE.md` §1a.
 - **Sign-in** (`/api/session`, details in `docs/ARCHITECTURE.md` §1b): the GIS button posts Google's ID token to `/api/session`, which trades it with the dmbk API (`signInWithGoogle`) and stores the API's session token in the `album_artwork_session` cookie (HttpOnly, SameSite=Lax, 7 days, Secure on https). The API owns accounts and the allowlist; this app keeps no Google secret. `/api/dmbk` forwards the session as `Authorization: Bearer`. **Gates check on the server** with `viewerFromRequest()`/`requireViewer()` from `lib/auth/viewer.ts`; `useViewer()` only drives UI. Gated features stay visible and say what they need; `/api/session` returns `features` (server-computed flags) so the UI can tell signed out, not allowed and allowed apart. Only background removal is gated. Vercel preview URLs can't sign in (not authorized origins on the shared OAuth client). A session from a local API is anonymous on production; sign in again after switching `DMBK_GRAPHQL_API_URL`.
 - **Background removal** (`docs/ARCHITECTURE.md` §3): runs on the owner's fal account, so it's limited to `FAL_ALLOWED_EMAILS` (admins don't count). Every fal route goes through `guardBackgroundRemoval` (403/401/403/503, in that order) before touching fal. The browser fits the layer under 4 MB (PNG → WebP 0.92 → halve), posts multipart, then polls with a signed `job` token that only its owner can use (no DB). Results are fetched straight from fal's CDN (it sends `Access-Control-Allow-Origin: *`) and embedded via `blobToDataURL`, so the scene never references fal. Apply goes through `editor.replaceImage(target, dataUrl, { keepOriginal })`: in place it swaps the element and rescales to the same on-canvas size; Keep original inserts a copy above with the same transform. Add a model in `lib/fal/models.ts` only. **Future: bring your own key** — per-account fal keys stored server-side, chosen in `resolveFalKey(viewer)`, replacing the allowlist.
+- **Undo** (`useHistory`, `docs/ARCHITECTURE.md` §1d): steps are snapshots of the *live* objects plus their `toObject()` props (images keep their element by reference), so undo re-adds/re-orders/re-sets instead of reloading JSON. Signals in one frame make one step; the label comes from `commit(label)` (every call site names its step), else the Fabric event (`drag` → Move…). `history.transaction(label, fn)` groups multi-step operations (Paste, Cut). Nudges within 1 s merge. History resets after the initial restore and after Load JSON; it isn't persisted. **Anything that mutates the canvas without a Fabric event must call `editor.commit('Label')`**, or it won't be undoable (nor autosaved, nor shown in Layers).
+- **Clipboard / Edit menu**: `useEditCommands` builds one command list (label, shortcut glyphs, enabled via the pure `commandState`, `run`) that both `EditMenu` and the keyboard use. The clipboard holds detached clones for the session (not the OS clipboard).
+- **Changelog**: `CHANGELOG.md` (`## YYYY-MM-DD — Title` + bullets) is parsed by `lib/changelog.ts` in the static `app/api/changelog` route. Add an entry with each user-visible change.
 - **Export**: `getCanvasBlob` renders `toCanvasElement(EXPORT_SIZE / ARTBOARD)` → 3000×3000 PNG blob (Fabric skips selection controls on export). JSON export is `{ canvasData: canvas.toJSON() }`.
 - **Layers panel** (`docs/ARCHITECTURE.md` §1c): rows are `canvas.getObjects()` reversed (front first), rebuilt once per frame from editor and Fabric events. Ids and labels are derived, never stored in the scene. Clicking a row selects the object (and leaves drawing mode). Drag (mouse/touch) or Alt+↑/↓ on a focused row reorders through `canvas.moveObjectTo` + `commit()`.
-- **Keyboard** (`useEditorItems`, one `keydown` listener): `Backspace`/`Delete` delete, arrows = z-order (Up/Down = front/back, Left/Right = forward/backward), `Esc` deselect, `+`/`=`/`-` scale. Ignored while editing canvas text, typing in a form field, inside any `data-editor-shortcuts="off"` element (the Layers panel, which has its own ↑/↓ focus, Enter/Space select, Alt+↑/↓ reorder), and on mobile UA. Workspace: ⌘/Ctrl `=`/`-`/`0`/`1` zoom in/out/fit/100%, pinch or ⌘/Ctrl+wheel zooms at cursor, wheel pans, Space-drag or middle-drag pans.
+- **Keyboard** (`useEditorShortcuts`, one `keydown` listener; the map is `matchShortcut` in `lib/commands.ts`, Illustrator conventions, ⌘ on macOS / Ctrl elsewhere): ⌘Z undo, ⇧⌘Z redo (also Ctrl+Y off macOS), ⌘X/⌘C cut/copy, ⌘V paste (centred in view), ⌘F/⌘B paste in front/back, ⇧⌘V paste in place, ⌘]/⌘[ forward/backward, ⇧⌘]/⇧⌘[ front/back; arrows nudge 1 unit, Shift+arrows 10; `Backspace`/`Delete` delete, `Esc` deselect, `+`/`=`/`-` scale. With the pointer over the Layers panel, ↑/↓ select the next layer instead of nudging. A matched key is `preventDefault`ed, so ⌘F/⌘B/⌘Z belong to the editor while focus is on the canvas. Ignored while editing canvas text, typing in a form field, inside any `data-editor-shortcuts="off"` element (Layers panel, dialogs, menu content), and on mobile UA. The Layers panel keeps its own ↑/↓ focus, Enter/Space select, Alt+↑/↓ reorder. Workspace: ⌘/Ctrl `=`/`-`/`0`/`1` zoom in/out/fit/100%, pinch or ⌘/Ctrl+wheel zooms at cursor, wheel pans, Space-drag or middle-drag pans.
 - **CORS**: images loaded with `crossOrigin: 'anonymous'` so canvas export isn't tainted. Any future remote-image source (AI-generated, Spaces-hosted) must send `Access-Control-Allow-Origin` headers.
 
 ## External integrations (planned / reference implementations)

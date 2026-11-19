@@ -131,7 +131,7 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
       const target = count - 1 - index
       if (target < 0 || target >= count || canvas.getObjects()[target] === object) return
       canvas.moveObjectTo(object, target)
-      editor.commit()
+      editor.commit('Arrange')
     },
     [editor]
   )

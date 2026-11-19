@@ -20,6 +20,7 @@ import { Text } from 'reshaped'
 import css from './CanvasEditor.module.css'
 import { LayerRow } from './LayerRow'
 import { SHORTCUTS_OFF } from './lib/keyboard'
+import { setLayersPanelHovered } from './lib/layersHover'
 import type { Layer } from './lib/useCanvasLayers'
 
 const position = (index: number, total: number) => `position ${index + 1} of ${total}`
@@ -138,9 +139,16 @@ export function LayersPanel({
     if (to !== from && to >= 0) onMove(layer.object, to)
   }
 
+  // Hovering the panel turns ↑/↓ into layer stepping (useEditorShortcuts).
+  useEffect(() => () => setLayersPanelHovered(false), [])
+  const hover = {
+    onPointerEnter: () => setLayersPanelHovered(true),
+    onPointerLeave: () => setLayersPanelHovered(false),
+  }
+
   if (!layers.length) {
     return (
-      <div className={css.LayersEmpty}>
+      <div className={css.LayersEmpty} {...hover}>
         <Text variant="caption-1" color="neutral-faded">
           No layers yet
         </Text>
@@ -149,7 +157,7 @@ export function LayersPanel({
   }
 
   return (
-    <div className={css.Layers} {...SHORTCUTS_OFF}>
+    <div className={css.Layers} {...SHORTCUTS_OFF} {...hover}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
