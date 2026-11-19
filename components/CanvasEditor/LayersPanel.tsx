@@ -29,12 +29,16 @@ export function LayersPanel({
   activeObject,
   onSelect,
   onMove,
+  onRemoveBackground,
+  isDrawing,
 }: {
   layers: Layer[]
   activeObject: FabricObject | null
   onSelect: (object: FabricObject) => void
   // `index` is a panel position, 0 = front.
   onMove: (object: FabricObject, index: number) => void
+  onRemoveBackground: () => void
+  isDrawing: boolean
 }) {
   const hintId = useId()
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
@@ -176,6 +180,8 @@ export function LayersPanel({
                 onSelect={() => select(layer)}
                 onFocus={() => setFocusedId(layer.id)}
                 onKeyDown={(e) => onRowKeyDown(e, index)}
+                onRemoveBackground={onRemoveBackground}
+                isDrawing={isDrawing}
               />
             ))}
           </div>

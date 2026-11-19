@@ -94,11 +94,30 @@ AccountMenu (top bar, right)        components/CanvasEditor/AccountMenu.tsx
 |-----|-------|-----|
 | URL tab accepts anything | `ImagePicker.tsx` | Client-side: fine for rendering (canvas taint handled via `crossOrigin`). Server-side fetch later: port SSRF guards from `dmbk-world` `fal.ts` |
 | No export-to-URI | `ExportControls.tsx` | New "Publish" flow → API route → DO Spaces → public URL |
-| No AI generation | — | FAL.ai integration, see §3 |
+| No AI generation | — | FAL.ai integration, see §3 (background removal is in; generation is next) |
 
 ## 3. Generative AI integration (FAL.ai)
 
 Reference: `dmbk-world/packages/api/src/features/fal.ts` (lora-trainer). Copy the patterns, not the payment/wallet logic.
+
+### Status: background removal (shipped)
+
+The first fal feature. Details are in `openspec/changes/add-fal-background-removal/design.md` (archived under `openspec/changes/archive/` once done).
+
+```
+RemoveBackgroundButton ─▶ BackgroundRemovalModal ─▶ useBackgroundRemoval
+  (gate via useViewer().features)                    │ encodeForUpload: PNG → WebP 0.92 → halve, ≤ 4 MB
+                                                     ▼
+POST /api/background-removal (multipart) ── guard: same-origin → requireViewer → FAL_ALLOWED_EMAILS → key
+   fal.storage.upload (1 h expiry) → fal.queue.submit(model.endpoint) → { job: HMAC-signed { requestId, viewerId, exp } }
+POST /api/background-removal/job { job }   → fal.queue.status → result → { image.url (fal media only) }
+DELETE /api/background-removal/job { job } → fal.queue.cancel (best effort)
+   browser fetches image.url from the fal CDN (ACAO *) → blobToDataURL → preview → editor.replaceImage
+```
+
+- Models live in `lib/fal/models.ts`: `rmbg-3` (default, optional prompt), `birefnet` (cheap, 2048 px) and `pixelcut`. The browser sends only the id.
+- Keys go through `falFor(viewer)` → `resolveFalKey(viewer)`, the seam for **bring your own key**: per-account fal keys stored server-side, which would replace the email allowlist when the feature opens up.
+- No DB. Run ownership lives in the signed token, keyed off the fal key, so rotating the key drops in-flight runs.
 
 ### Client setup (server-side only)
 

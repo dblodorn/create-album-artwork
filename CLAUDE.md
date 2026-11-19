@@ -25,7 +25,7 @@ No tests, no lint configured; run `typecheck` and `build` before committing. Dep
 
 | Layer | Tech | Notes |
 |-------|------|-------|
-| Framework | Next.js 16.2 (App Router) | `app/` dir: one page (`page.tsx`) + two route handlers (`api/dmbk`, `api/session`) |
+| Framework | Next.js 16.2 (App Router) | `app/` dir: one page (`page.tsx`) + route handlers (`api/dmbk`, `api/session`, `api/background-removal`) |
 | UI | React 19.2 + Reshaped 4.1 | `slate` theme, dark mode (`data-rs-color-mode="dark"`) |
 | Canvas | Fabric.js 7.4 | `Canvas`, `Textbox`, `Image`, free-draw brush |
 | Fonts | Google Fonts runtime `@import` | 51 families in `lib/googleFonts.tsx` |
@@ -40,7 +40,9 @@ app/
   page.tsx            # Client component → <App> → <CanvasEditor>
   App.tsx             # <Reshaped theme="slate"> + <SessionProvider> wrapper
   api/dmbk/route.ts   # POST { operation, variables } → dmbk GraphQL API with X-API-Key (allowlisted ops only)
-  api/session/route.ts # GET { viewer } | POST { idToken } sign in | DELETE sign out; HTTP-only session cookie
+  api/session/route.ts # GET { viewer, features } | POST { idToken } sign in | DELETE sign out; HTTP-only session cookie
+  api/background-removal/route.ts     # POST multipart { image, model, prompt? } → { job } (fal storage + queue submit)
+  api/background-removal/job/route.ts # POST { job } → status | done + image; DELETE { job } cancel
 components/CanvasEditor/
   CanvasEditor.tsx    # Orchestrator: full-window layout — top bar, Workspace, floating panels
   Workspace.tsx       # zoom/pan viewport hosting the canvas (wheel, Space/middle drag, ⌘ shortcuts)
@@ -56,6 +58,8 @@ components/CanvasEditor/
   AccountMenu         # top bar, right: Google sign-in button, or avatar + menu (name, email, Sign out)
   FontSelector        # Google Fonts modal
   ImagePicker         # modal: Upload tab | URL tab | LoRA tab; closes only once the image is added
+  BackgroundRemovalModal # fal cutout: model + optional prompt → working → preview → Apply / Try again; Keep original
+  RemoveBackgroundButton # Object panel + selected image row; gate states (select image / sign in / not allowed / ready)
   LoraBrowser         # LoRA tab: lora-trainer LoRAs → their images → pick embeds as data URL
   ImageUploader       # file input → downscaled data URL preview
   ShadowControls      # shadow color/blur/offset (paths, images, text)
@@ -80,8 +84,16 @@ lib/
   auth/
     session.ts          # server-only: Viewer type, cookie options, viewerForToken, signInWithGoogle, revokeToken
     viewer.ts           # server-only: readSessionToken, viewerFromRequest (fails closed), requireViewer({ admin? })
-    client.tsx          # browser: SessionProvider + useViewer() → { viewer, status, isAdmin, signIn, signOut }
+    client.tsx          # browser: SessionProvider + useViewer() → { viewer, status, isAdmin, features, signIn, signOut }
   http/sameOrigin.ts    # isSameOrigin(request): Sec-Fetch-Site, then Origin/host
+  fal/
+    access.ts           # server-only: FAL_ALLOWED_EMAILS allowlist → canUseBackgroundRemoval(viewer)
+    client.ts           # server-only: resolveFalKey(viewer) (the BYOK seam) + falFor(viewer)
+    guard.ts            # server-only: same-origin → signed in → allowlisted → key, for the fal routes
+    models.ts           # universal: rmbg-3 | birefnet | pixelcut → endpoint, label, toInput(); MODEL_OPTIONS for the UI
+    jobToken.ts         # server-only: signed run tokens (requestId + viewerId + exp, HMAC)
+    image.ts            # server-only: 4 MB cap, magic-byte sniff, fal-media-only result parsing
+    useBackgroundRemoval.ts # browser: fit under 4 MB, submit, poll, cancel, fetch result → data URL
   dmbk/
     api.ts              # server-only: callDmbkApi(query, vars, token?) — env reads, X-API-Key, bearer, timeout
     operations.ts       # server-only: allowlisted query text + variable validators
@@ -99,7 +111,8 @@ lib/
 - **Fonts**: `ensureFontLoaded(family)` adds a persistent Google Fonts `<link>` and awaits `document.fonts.load` before text is changed or restored. Picking a font with no text selected sets the font for the next text added.
 - **Image insertion**: uploads and LoRA picks become downscaled data URLs (so they persist in the scene and don't depend on the source URL). `FabricImage.fromURL(url, { crossOrigin: 'anonymous' })` → `scaleImageToCanvas` (fits at ¼ canvas size; returns the top-left corner, so `onImageSelect` adds half the size because Fabric 7 positions by centre) → `canvas.add` → `setActiveObject`. Every tab produces a string consumed by `onImageSelect`, which returns a promise that rejects after its toast; `ImagePicker` closes only on success. The URL tab still passes the remote URL through as-is.
 - **dmbk GraphQL API** (`/api/dmbk`): the browser posts `{ operation, variables }`; the route checks same-origin, looks the operation up in `lib/dmbk/operations.ts` (raw `query` text and unknown names → 400), and forwards with `X-API-Key` and a 10 s timeout. Missing key → 503 `not_configured`; any upstream failure → 502 `upstream` (cause logged server-side only). **To add an operation**, add its query text + validator to `OPERATIONS` in `operations.ts` and its types to `Operations` in `client.ts`. A local run reads production data unless `DMBK_GRAPHQL_API_URL` is overridden. Details in `docs/ARCHITECTURE.md` §1a.
-- **Sign-in** (`/api/session`, details in `docs/ARCHITECTURE.md` §1b): the GIS button posts Google's ID token to `/api/session`, which trades it with the dmbk API (`signInWithGoogle`) and stores the API's session token in the `album_artwork_session` cookie (HttpOnly, SameSite=Lax, 7 days, Secure on https). The API owns accounts and the allowlist; this app keeps no Google secret. `/api/dmbk` forwards the session as `Authorization: Bearer`. **Gates check on the server** with `viewerFromRequest()`/`requireViewer()` from `lib/auth/viewer.ts`; `useViewer()` only drives UI. Nothing is gated yet. Vercel preview URLs can't sign in (not authorized origins on the shared OAuth client). A session from a local API is anonymous on production; sign in again after switching `DMBK_GRAPHQL_API_URL`.
+- **Sign-in** (`/api/session`, details in `docs/ARCHITECTURE.md` §1b): the GIS button posts Google's ID token to `/api/session`, which trades it with the dmbk API (`signInWithGoogle`) and stores the API's session token in the `album_artwork_session` cookie (HttpOnly, SameSite=Lax, 7 days, Secure on https). The API owns accounts and the allowlist; this app keeps no Google secret. `/api/dmbk` forwards the session as `Authorization: Bearer`. **Gates check on the server** with `viewerFromRequest()`/`requireViewer()` from `lib/auth/viewer.ts`; `useViewer()` only drives UI. Gated features stay visible and say what they need; `/api/session` returns `features` (server-computed flags) so the UI can tell signed out, not allowed and allowed apart. Only background removal is gated. Vercel preview URLs can't sign in (not authorized origins on the shared OAuth client). A session from a local API is anonymous on production; sign in again after switching `DMBK_GRAPHQL_API_URL`.
+- **Background removal** (`docs/ARCHITECTURE.md` §3): runs on the owner's fal account, so it's limited to `FAL_ALLOWED_EMAILS` (admins don't count). Every fal route goes through `guardBackgroundRemoval` (403/401/403/503, in that order) before touching fal. The browser fits the layer under 4 MB (PNG → WebP 0.92 → halve), posts multipart, then polls with a signed `job` token that only its owner can use (no DB). Results are fetched straight from fal's CDN (it sends `Access-Control-Allow-Origin: *`) and embedded via `blobToDataURL`, so the scene never references fal. Apply goes through `editor.replaceImage(target, dataUrl, { keepOriginal })`: in place it swaps the element and rescales to the same on-canvas size; Keep original inserts a copy above with the same transform. Add a model in `lib/fal/models.ts` only. **Future: bring your own key** — per-account fal keys stored server-side, chosen in `resolveFalKey(viewer)`, replacing the allowlist.
 - **Export**: `getCanvasBlob` renders `toCanvasElement(EXPORT_SIZE / ARTBOARD)` → 3000×3000 PNG blob (Fabric skips selection controls on export). JSON export is `{ canvasData: canvas.toJSON() }`.
 - **Layers panel** (`docs/ARCHITECTURE.md` §1c): rows are `canvas.getObjects()` reversed (front first), rebuilt once per frame from editor and Fabric events. Ids and labels are derived, never stored in the scene. Clicking a row selects the object (and leaves drawing mode). Drag (mouse/touch) or Alt+↑/↓ on a focused row reorders through `canvas.moveObjectTo` + `commit()`.
 - **Keyboard** (`useEditorItems`, one `keydown` listener): `Backspace`/`Delete` delete, arrows = z-order (Up/Down = front/back, Left/Right = forward/backward), `Esc` deselect, `+`/`=`/`-` scale. Ignored while editing canvas text, typing in a form field, inside any `data-editor-shortcuts="off"` element (the Layers panel, which has its own ↑/↓ focus, Enter/Space select, Alt+↑/↓ reorder), and on mobile UA. Workspace: ⌘/Ctrl `=`/`-`/`0`/`1` zoom in/out/fit/100%, pinch or ⌘/Ctrl+wheel zooms at cursor, wheel pans, Space-drag or middle-drag pans.
@@ -124,6 +137,7 @@ The URL tab in `ImagePicker` accepts arbitrary URLs today. Before server-side fe
 ### 3. DigitalOcean Spaces publishing (final artwork → accessible URI)
 
 - Bucket: **`dmbk-io`** (SFO2) — already exists, CORS `[*]` with GET/HEAD allowed. Reuse it (e.g. prefix `album-artwork/`) rather than provisioning new infra.
+- **CORS is first-match per origin.** Besides `[*]`, the bucket has rules for specific origins (e.g. `http://localhost:3000`, shared with lora-trainer's local uploads), and Spaces applies the first rule whose origin matches, so a narrow rule overrides the wildcard for that origin. Any per-origin rule must list every method the apps need from it: the `localhost:3000` rule was PUT-only, which made LoRA image reads fail locally ("Failed to fetch" in `urlToDataURL`) until GET/HEAD were added (2026-11-19). The CDN caches per `Origin` for up to an hour after a change. Check with `curl -X OPTIONS -H 'Origin: …' -H 'Access-Control-Request-Method: GET' <object URL>`.
 - Access: DO REST API or **boto3/AWS SDK with the S3-compatible endpoint** (`sfo2.digitaloceanspaces.com`). Note: `doctl`/DO MCP can't do Spaces object ops (401) — use S3-compatible creds (Spaces access key/secret, not the DO API token).
 - Upload a PUT with `ContentType: image/png`, public-read ACL → final URI `https://dmbk-io.sfo2.digitaloceanspaces.com/album-artwork/<id>.png`. That URI is what SoundCloud publishing consumes.
 - SoundCloud side: artwork is set via `PUT /tracks/{urn}` / `PUT /playlists/{urn}` with multipart `track[artwork_data]` — the dmbk-book app (`apps/dmbk` in dmbk-world) already has a SoundCloud OAuth client (`lib/soundcloud/client.ts`, client-credentials) that can be lifted for API calls.
@@ -148,14 +162,15 @@ In use now (see `.env.example`):
 DMBK_GRAPHQL_API_URL=     # optional; defaults to https://graphql.dmbk.network/graphql
 DMBK_GRAPHQL_API_KEY=     # this app's client key (dmbk-graphql-api: npm run api-client -- create create-album-artwork)
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=  # shared dmbk OAuth client (same as lora-trainer); public
+FAL_AI_API_KEY=           # fal.ai dashboard; server-only, billed per run
+FAL_ALLOWED_EMAILS=       # comma-separated; who may use fal features. Empty = nobody
 ```
 
-Without the key the LoRA tab shows "not set up" and sign-in fails (the API calls need it). Without the client ID the top bar shows "Sign-in unavailable". Everything else works.
+Without the key the LoRA tab shows "not set up" and sign-in fails (the API calls need it). Without the client ID the top bar shows "Sign-in unavailable". Without `FAL_AI_API_KEY` background removal says "not set up"; without `FAL_ALLOWED_EMAILS` nobody can use it. Everything else works.
 
-When AI/publish lands:
+When publishing lands:
 
 ```
-FAL_AI_API_KEY=           # fal.ai dashboard
 DO_SPACES_KEY=            # Spaces access key (S3-compatible)
 DO_SPACES_SECRET=
 DO_SPACES_BUCKET=dmbk-io

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Canvas, Circle, Line, Rect, Textbox } from 'fabric'
+import { Canvas, Circle, FabricImage, Line, Rect, Shadow, Textbox } from 'fabric'
 
 import { ensureFontLoaded } from '@/lib/googleFonts'
 import { CIRCLE, FILL, LINE, RECTANGLE, STROKE, TEXT } from './defaultShapes'
@@ -25,6 +25,14 @@ export interface FabricJSEditor {
   // after any mutation made directly on `canvas` that Fabric doesn't report
   // through `object:added/removed/modified`.
   commit: () => void
+  // Swaps an image layer's picture, keeping its on-canvas size, transform,
+  // effects and stacking slot. With keepOriginal, adds the new picture as a
+  // layer directly above instead. Resolves with the image that now shows it.
+  replaceImage: (
+    target: FabricImage,
+    dataUrl: string,
+    options?: { keepOriginal?: boolean }
+  ) => Promise<FabricImage>
   // Called after every commit(). Returns an unsubscribe function.
   subscribe: (listener: () => void) => () => void
 }
@@ -132,6 +140,40 @@ const buildEditor = (
       commit()
     },
     commit,
+    replaceImage: async (target, dataUrl, { keepOriginal = false } = {}) => {
+      const next = await FabricImage.fromURL(dataUrl)
+      const width = target.getScaledWidth()
+      const height = target.getScaledHeight()
+
+      if (!keepOriginal) {
+        target.setElement(next.getElement())
+        target.set({ scaleX: width / target.width, scaleY: height / target.height })
+        target.setCoords()
+        commit()
+        return target
+      }
+
+      next.set({
+        left: target.left,
+        top: target.top,
+        originX: target.originX,
+        originY: target.originY,
+        angle: target.angle,
+        flipX: target.flipX,
+        flipY: target.flipY,
+        skewX: target.skewX,
+        skewY: target.skewY,
+        opacity: target.opacity,
+        shadow: target.shadow ? new Shadow(target.shadow) : null,
+        scaleX: width / next.width,
+        scaleY: height / next.height,
+      })
+      next.setCoords()
+      canvas.insertAt(canvas.getObjects().indexOf(target) + 1, next)
+      canvas.setActiveObject(next)
+      commit()
+      return next
+    },
     subscribe: (listener) => {
       listeners.add(listener)
       return () => {
