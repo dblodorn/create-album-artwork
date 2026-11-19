@@ -102,7 +102,7 @@ Reference: `dmbk-world/packages/api/src/features/fal.ts` (lora-trainer). Copy th
 
 ### Status: background removal (shipped)
 
-The first fal feature. Details are in `openspec/changes/add-fal-background-removal/design.md` (archived under `openspec/changes/archive/` once done).
+The first fal feature. Details are in `openspec/changes/archive/2026-11-19-add-fal-background-removal/design.md`; the behaviour contract is `openspec/specs/background-removal/spec.md`.
 
 ```
 RemoveBackgroundButton ─▶ BackgroundRemovalModal ─▶ useBackgroundRemoval
