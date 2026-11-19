@@ -26,7 +26,7 @@
   - `POST` with no body gives 400; with a junk `idToken` gives 401 `refused`; with `Origin: https://evil.example` gives 403;
   - `DELETE` from the same origin gives `{ ok: true }` and a clearing cookie, and cross-site gives 403.
 - [x] 3.3 Add `lib/auth/viewer.ts` (`server-only`) with `viewerFromRequest()` (cookie through `cookies()`, failing closed to `null`) and `requireViewer({ admin? })` (viewer, or a 401/403 `Response`). Make `/api/session`'s `GET` use the same lookup. Verify with `npm run typecheck`, and check the fails-closed paths through 3.2's forged-cookie and unreachable-API curls.
-- [ ] 3.4 Make `/api/dmbk` forward the session cookie as the bearer. Verify that `LoraTrainings` returns the same data with no cookie and with a forged cookie, and, once signed in (task 5.1), that the dev server's request to the API carried `authorization: Bearer` (checked by temporarily pointing `DMBK_GRAPHQL_API_URL` at a logging relay).
+- [x] 3.4 Make `/api/dmbk` forward the session cookie as the bearer. Verify that `LoraTrainings` returns the same data with no cookie and with a forged cookie, and, once signed in (task 5.1), that the dev server's request to the API carried `authorization: Bearer` (checked by temporarily pointing `DMBK_GRAPHQL_API_URL` at a logging relay).
 
 ## 4. Client session and top-bar UI
 
@@ -35,7 +35,7 @@
   - the button renders on `localhost:3000` and the bar doesn't shift between loading and loaded;
   - blocking `accounts.google.com` (DevTools request blocking) shows "Sign-in unavailable" and the zoom and file actions still work;
   - with the client ID unset, the same label shows.
-- [ ] 4.3 Add the signed-in state: a Reshaped `Avatar` inside a `DropdownMenu`, with a name and email header and a Sign out item. Load `image` with `referrerpolicy="no-referrer"`, falling back to initials if it's missing or fails to load. The trigger is labelled with the name, or the email when there's no name. Verify in the browser:
+- [x] 4.3 Add the signed-in state: a Reshaped `Avatar` inside a `DropdownMenu`, with a name and email header and a Sign out item. Load `image` with `referrerpolicy="no-referrer"`, falling back to initials if it's missing or fails to load. The trigger is labelled with the name, or the email when there's no name. Verify in the browser:
   - the avatar shows the picture;
   - forcing the image to fail shows initials;
   - the menu opens and closes on Escape and on an outside click;
@@ -43,15 +43,15 @@
 
 ## 5. End-to-end checks
 
-- [ ] 5.1 Sign-in flow on `localhost:3000` with an `ALLOWED_EMAILS` account:
+- [x] 5.1 Sign-in flow on `localhost:3000` with an `ALLOWED_EMAILS` account:
   - sign in, and the avatar appears with no reload;
   - reload, and you're still signed in;
   - in DevTools, the cookie is `HttpOnly`, `SameSite=Lax`, with a 7-day expiry, and `document.cookie` and the `/api/session` response bodies contain no token;
   - Sign out shows the button again, and reusing the old cookie value with `GET /api/session` gives `viewer: null`.
-- [ ] 5.2 Refused and unavailable sign-ins:
+- [x] 5.2 Refused and unavailable sign-ins:
   - an account not on `ALLOWED_EMAILS` gets the "isn't allowed" toast and no cookie is set;
   - with `DMBK_GRAPHQL_API_URL` unreachable, sign-in shows the "unavailable" toast; on load with an existing cookie the app shows signed out, the cookie is kept, and it signs back in by itself once the URL is restored and the page reloaded.
-- [ ] 5.3 No gating and no editor side effects:
+- [x] 5.3 No gating and no editor side effects:
   - with a scene on the canvas, a selection, a non-default zoom and moved panels, sign in and then sign out, and all four are unchanged;
   - signed out, the Upload, URL and LoRA tabs, drawing, text, PNG/JSON export and JSON load all work.
 - [x] 5.4 Check that no secret reaches the browser: build with recognisable values, grep `.next/static` for `X-API-Key`, `DMBK_GRAPHQL_API_KEY`, `album_artwork_session` handling code and the key value, and find nothing. Then run `npm run typecheck` and `npm run build`, and confirm both pass.
@@ -68,4 +68,4 @@
   - the env vars.
 
   Verify by reading both files back for accuracy.
-- [ ] 6.3 After merge, on production (`sleeve.dmbk.io`): sign in, check the avatar picture and menu, sign out. Verify that each works and that the LoRA tab still loads while signed in.
+- [x] 6.3 After merge, on production (`sleeve.dmbk.io`): sign in, check the avatar picture and menu, sign out. Verify that each works and that the LoRA tab still loads while signed in.
