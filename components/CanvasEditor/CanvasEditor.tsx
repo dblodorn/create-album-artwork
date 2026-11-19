@@ -5,12 +5,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Divider, Text, Tooltip, View, useToast } from 'reshaped'
 
 import { AccountMenu } from './AccountMenu'
+import { AppMenu } from './AppMenu'
 import { BackgroundRemovalModal } from './BackgroundRemovalModal'
 import { ActiveItemControls } from './ActiveItemControls'
 import css from './CanvasEditor.module.css'
 import { ColorEditor } from './ColorEditor'
 import { DrawingControls } from './DrawingControls'
-import { ExportControls } from './ExportControls'
+import { EditMenu } from './EditMenu'
+import { FileMenu } from './FileMenu'
 import { FloatingPanel } from './FloatingPanel'
 import { FontSelector } from './FontSelector'
 import { Select, Type } from './icons'
@@ -21,9 +23,12 @@ import {
   useEditorItems,
   useFabricJSEditor,
 } from './lib'
-import { DEFAULT_BACKGROUND } from './lib/constants'
+import { ARTBOARD, DEFAULT_BACKGROUND } from './lib/constants'
 import { isImage, isText } from './lib/objectTypes'
 import { useCanvasLayers } from './lib/useCanvasLayers'
+import { useEditCommands } from './lib/useEditCommands'
+import { useEditorShortcuts } from './lib/useEditorShortcuts'
+import { useHistory } from './lib/useHistory'
 import { useViewport } from './lib/useViewport'
 import { Workspace } from './Workspace'
 import { ZoomControls } from './ZoomControls'
@@ -40,6 +45,9 @@ export function CanvasEditor() {
 
   const workspaceRef = useRef<HTMLDivElement>(null)
   const viewport = useViewport(workspaceRef)
+
+  const history = useHistory(editor)
+  const { reset: resetHistory } = history
 
   const [initialized, setInitialized] = useState(false)
   const [backgroundColor, setBackgroundColor] = useState(DEFAULT_BACKGROUND)
@@ -64,10 +72,12 @@ export function CanvasEditor() {
 
       editor.canvas.requestRenderAll()
       syncFromCanvas()
+      // Undo starts from the restored scene.
+      resetHistory()
     }
 
     initialize()
-  }, [editor, initialized, restore, syncFromCanvas])
+  }, [editor, initialized, restore, syncFromCanvas, resetHistory])
 
   const {
     activeItem,
@@ -93,6 +103,26 @@ export function CanvasEditor() {
 
   const layers = useCanvasLayers(editor)
   const { select: selectLayer } = layers
+
+  // Middle of the part of the artboard currently on screen, in artboard units.
+  const { zoom, pan } = viewport
+  const getVisibleCenter = useCallback(() => {
+    const rect = workspaceRef.current?.getBoundingClientRect()
+    if (!rect || !zoom) return { x: ARTBOARD / 2, y: ARTBOARD / 2 }
+    const clamp = (v: number) => Math.min(ARTBOARD, Math.max(0, v))
+    const x0 = clamp(-pan.x / zoom)
+    const x1 = clamp((rect.width - pan.x) / zoom)
+    const y0 = clamp(-pan.y / zoom)
+    const y1 = clamp((rect.height - pan.y) / zoom)
+    return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }
+  }, [zoom, pan])
+
+  const { commands, nudge, platform } = useEditCommands({
+    editor,
+    history,
+    activeItem,
+    getVisibleCenter,
+  })
   const onSelectLayer = useCallback(
     (object: FabricObject) => {
       if (isDrawing) toggleDraw()
@@ -119,6 +149,32 @@ export function CanvasEditor() {
     },
     [editor, cutoutTarget, toast]
   )
+
+  const selectAdjacentLayer = useCallback(
+    (direction: -1 | 1) => {
+      const rows = layers.layers
+      if (!rows.length) return
+      const current = rows.findIndex((row) => row.object === layers.activeObject)
+      const next =
+        current === -1 ? (direction < 0 ? 0 : rows.length - 1) : current + direction
+      if (next < 0 || next >= rows.length || next === current) return
+      onSelectLayer(rows[next].object)
+    },
+    [layers.layers, layers.activeObject, onSelectLayer]
+  )
+
+  useEditorShortcuts(editor?.canvas, {
+    commands,
+    nudge,
+    platform,
+    selectAdjacentLayer,
+    keyCommands: {
+      delete: deleteSelected,
+      deselect: handleDeselectActiveObject,
+      scaleUp: () => scaleActiveItemUpDown('up'),
+      scaleDown: () => scaleActiveItemUpDown('down'),
+    },
+  })
 
   const handleSelect = useCallback(() => {
     if (!editor) return
@@ -160,14 +216,18 @@ export function CanvasEditor() {
   return (
     <div className={css.App}>
       <header className={css.TopBar}>
-        <Text variant="body-2" weight="medium">
-          Album Artwork
-        </Text>
+        <View direction="row" gap={1} align="center">
+          <AppMenu />
+          <FileMenu
+            editor={editor}
+            history={history}
+            hasObjects={layers.layers.length > 0}
+            onSceneLoaded={syncFromCanvas}
+          />
+          <EditMenu commands={commands} />
+        </View>
         <ZoomControls viewport={viewport} />
         <View direction="row" gap={2} align="center">
-          {editor && (
-            <ExportControls editor={editor} onSceneLoaded={syncFromCanvas} />
-          )}
           <AccountMenu />
         </View>
       </header>

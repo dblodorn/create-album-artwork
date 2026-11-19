@@ -22,7 +22,7 @@ User ──▶ CanvasEditor.tsx (client)
                          IndexedDB["canvas-editor-scene-v1"]
                          { canvasData: canvas.toJSON() }
 
-ExportControls ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(3) → 3000×3000 PNG
+FileMenu ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(3) → 3000×3000 PNG
                  ──▶ downloadJSON = { canvasData } → .json file
                  ──▶ loadJSON → restoreScene (drop blob: images, load fonts)
 ```
@@ -30,7 +30,25 @@ ExportControls ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(3) → 3
 - Everything is client-side except two routes: `/api/dmbk` (§1a) and `/api/session` (§1b). There is **no server state and no DB**; accounts live in the dmbk GraphQL API.
 - The canvas works in fixed 1000×1000 logical units and is only CSS-scaled to its square parent (max-width 700px wrapper). Export multiplies by 3 → a 3000×3000 PNG regardless of viewport.
 - Uploaded images are downscaled to ≤2048px and embedded as data URLs, so the scene (and exported JSON) is self-contained.
-- `preserveObjectStacking = true` — z-order only changes via explicit layer controls: the Layers panel (drag, Alt+↑/↓), the arrow-key shortcuts and the Object panel buttons.
+- `preserveObjectStacking = true` — z-order only changes via explicit layer controls: the Layers panel (drag, Alt+↑/↓), the Arrange shortcuts/Edit menu (⌘] ⌘[ ⇧⌘] ⇧⌘[) and the Object panel buttons.
+
+## 1d. Undo, clipboard and the Edit menu
+
+```
+Fabric object:added/removed/modified, text:editing:exited ─┐
+editor.commit(label) ──────────────────────────────────────┼─▶ useHistory: one step per animation frame
+history.transaction('Paste' | 'Cut', fn) ──────────────────┘     HistoryStack (≤100, redo truncation, nudge merge)
+                                                                  step = { label, snapshot: live objects + props }
+⌘Z/⇧⌘Z or Edit → Undo/Redo ─▶ restoreSnapshot: remove/add/moveObjectTo/set/setElement ─▶ commit() (autosave, Layers)
+
+useEditCommands ─▶ commands[id] = { label, shortcut, enabled (commandState), run }
+   ├─ EditMenu (Reshaped DropdownMenu, data-editor-shortcuts="off")
+   └─ useEditorShortcuts ─ matchShortcut(e, platform) ─▶ commands / nudge / Layers ↑↓ stepping
+```
+
+- Snapshots keep object references, so undo is instant with large images and image pixels are never copied per step. Objects inside an `ActiveSelection` are recorded at their canvas position (`getXY`, `getTotalAngle`, `getObjectScaling`).
+- The clipboard (`clipboard.ts`) stores detached clones at absolute positions; each paste clones again. Paste centres on the visible artboard (from `useViewport`); in Front/Back insert next to the selected object; in Place keeps positions.
+- Pure pieces (`HistoryStack`, snapshots, `Clipboard`, `matchShortcut`, `commandState`, `parseChangelog`) are unit-tested with Vitest on a stubbed Fabric canvas (`test/canvasStub.ts`).
 
 ## 1c. Layers panel
 
@@ -93,7 +111,7 @@ AccountMenu (top bar, right)        components/CanvasEditor/AccountMenu.tsx
 | Gap | Where | Fix |
 |-----|-------|-----|
 | URL tab accepts anything | `ImagePicker.tsx` | Client-side: fine for rendering (canvas taint handled via `crossOrigin`). Server-side fetch later: port SSRF guards from `dmbk-world` `fal.ts` |
-| No export-to-URI | `ExportControls.tsx` | New "Publish" flow → API route → DO Spaces → public URL |
+| No export-to-URI | `FileMenu.tsx` | New "Publish" flow → API route → DO Spaces → public URL |
 | No AI generation | — | FAL.ai integration, see §3 (background removal is in; generation is next) |
 
 ## 3. Generative AI integration (FAL.ai)

@@ -125,6 +125,30 @@
   padding: var(--rs-unit-x2);
 }
 
+/* MENUS */
+.MenuShortcut {
+  margin-left: var(--rs-unit-x6);
+  color: var(--rs-color-foreground-neutral-faded);
+  font-family: var(--rs-font-family-monospace);
+  font-size: 12px;
+}
+
+.Changelog {
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--rs-unit-x4);
+
+  & ul {
+    margin: var(--rs-unit-x1) 0 0;
+    padding-left: var(--rs-unit-x4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--rs-unit-x1);
+  }
+}
+
 /* LAYERS */
 .Layers {
   width: 200px;

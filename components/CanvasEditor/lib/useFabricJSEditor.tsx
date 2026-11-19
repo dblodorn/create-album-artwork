@@ -21,10 +21,11 @@ export interface FabricJSEditor {
   setStrokeColor: (color: string) => void
   setBackgroundColor: (color: string) => void
   setFont: (family: string) => Promise<void>
-  // Re-render and mark the scene as changed (schedules an autosave). Call it
-  // after any mutation made directly on `canvas` that Fabric doesn't report
-  // through `object:added/removed/modified`.
-  commit: () => void
+  // Re-render and mark the scene as changed (schedules an autosave and an
+  // undo step). Call it after any mutation made directly on `canvas` that
+  // Fabric doesn't report through `object:added/removed/modified`. The label
+  // names the undo step ("Undo Color"); unlabelled commits read as "Edit".
+  commit: (label?: string) => void
   // Swaps an image layer's picture, keeping its on-canvas size, transform,
   // effects and stacking slot. With keepOriginal, adds the new picture as a
   // layer directly above instead. Resolves with the image that now shows it.
@@ -33,8 +34,8 @@ export interface FabricJSEditor {
     dataUrl: string,
     options?: { keepOriginal?: boolean }
   ) => Promise<FabricImage>
-  // Called after every commit(). Returns an unsubscribe function.
-  subscribe: (listener: () => void) => () => void
+  // Called after every commit(), with its label. Returns an unsubscribe function.
+  subscribe: (listener: (label?: string) => void) => () => void
 }
 
 interface EditorState {
@@ -48,11 +49,11 @@ const buildEditor = (
   state: EditorState,
   onChange: () => void
 ): FabricJSEditor => {
-  const listeners = new Set<() => void>()
-  const commit = () => {
+  const listeners = new Set<(label?: string) => void>()
+  const commit = (label?: string) => {
     canvas.requestRenderAll()
     onChange()
-    listeners.forEach((listener) => listener())
+    listeners.forEach((listener) => listener(label))
   }
 
   return {
@@ -84,18 +85,20 @@ const buildEditor = (
       const object = canvas.getActiveObject()
       if (!isText(object)) return
       object.set({ text })
-      commit()
+      commit('Edit Text')
     },
     deleteAll: () => {
+      if (!canvas.getObjects().length) return
       canvas.discardActiveObject()
       canvas.remove(...canvas.getObjects())
-      commit()
+      commit('Clear')
     },
     deleteSelected: () => {
       const objects = canvas.getActiveObjects()
+      if (!objects.length) return
       canvas.discardActiveObject()
       canvas.remove(...objects)
-      commit()
+      commit('Delete')
     },
     get fillColor() {
       return state.fillColor
@@ -109,7 +112,7 @@ const buildEditor = (
     setFillColor: (fill: string) => {
       state.fillColor = fill
       canvas.getActiveObjects().forEach((object) => object.set({ fill }))
-      commit()
+      commit('Color')
     },
     setStrokeColor: (stroke: string) => {
       state.strokeColor = stroke
@@ -121,11 +124,11 @@ const buildEditor = (
         }
         object.set({ stroke })
       })
-      commit()
+      commit('Color')
     },
     setBackgroundColor: (color: string) => {
       canvas.backgroundColor = color
-      commit()
+      commit('Background Color')
     },
     setFont: async (family: string) => {
       state.fontFamily = family
@@ -137,7 +140,7 @@ const buildEditor = (
         text.initDimensions()
         text.setCoords()
       })
-      commit()
+      commit('Font')
     },
     commit,
     replaceImage: async (target, dataUrl, { keepOriginal = false } = {}) => {
@@ -149,7 +152,7 @@ const buildEditor = (
         target.setElement(next.getElement())
         target.set({ scaleX: width / target.width, scaleY: height / target.height })
         target.setCoords()
-        commit()
+        commit('Remove Background')
         return target
       }
 
@@ -171,7 +174,7 @@ const buildEditor = (
       next.setCoords()
       canvas.insertAt(canvas.getObjects().indexOf(target) + 1, next)
       canvas.setActiveObject(next)
-      commit()
+      commit('Remove Background')
       return next
     },
     subscribe: (listener) => {

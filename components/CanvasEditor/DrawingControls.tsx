@@ -35,7 +35,7 @@ export function DrawingControls({
       if (isPath(activeItem)) {
         activeItem.set({ strokeWidth: weight })
         activeItem.setCoords()
-        editor.commit()
+        editor.commit('Stroke Width')
       }
     },
     [editor, activeItem, setStrokeWeight]
