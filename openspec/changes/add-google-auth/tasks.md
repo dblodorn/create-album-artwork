@@ -2,8 +2,8 @@
 
 ## 1. Prerequisites outside this repo
 
-- [ ] 1.1 In dmbk-graphql-api, open an OpenSpec change that adds a nullable `image` to `Viewer` (Better Auth's stored Google picture), modifying `accounts-auth` "Viewer identity fields". Implement it, deploy it, and refresh dmbk-photo's schema copy (`pnpm schema:pull:api`). Verify that `{ viewer { id image } }` against production with a real session returns the picture URL, and that it returns `viewer: null` without one.
-- [ ] 1.2 Operator step (the user does this): in the Google Cloud console, add `https://sleeve.dmbk.io`, `https://create-album-artwork.vercel.app` and `http://localhost:3000` as authorized JavaScript origins on the dmbk OAuth client. Then set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (the same value as lora-trainer's) in the Vercel project `create-album-artwork` for Production, Preview and Development, and run `vercel env pull .env.local`. Verify that `.env.local` has a non-empty `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+- [x] 1.1 In dmbk-graphql-api, open an OpenSpec change that adds a nullable `image` to `Viewer` (Better Auth's stored Google picture), modifying `accounts-auth` "Viewer identity fields". Implement it, deploy it, and refresh dmbk-photo's schema copy (`pnpm schema:pull:api`). Verify that `{ viewer { id image } }` against production with a real session returns the picture URL, and that it returns `viewer: null` without one.
+- [x] 1.2 Operator step (the user does this): in the Google Cloud console, add `https://sleeve.dmbk.io`, `https://create-album-artwork.vercel.app` and `http://localhost:3000` as authorized JavaScript origins on the dmbk OAuth client. Then set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (the same value as lora-trainer's) in the Vercel project `create-album-artwork` for Production, Preview and Development, and run `vercel env pull .env.local`. Verify that `.env.local` has a non-empty `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
 ## 2. Shared server plumbing
 
