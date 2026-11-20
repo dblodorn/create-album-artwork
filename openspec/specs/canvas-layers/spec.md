@@ -7,7 +7,7 @@ Lets someone making album artwork see every object on the canvas in stacking ord
 ## Requirements
 
 ### Requirement: Layers panel
-The editor SHALL show a Layers panel as a floating panel alongside the Tools panel. It is the only panel for acting on objects; there is no separate Object panel. It SHALL be wide enough for a row's label and its inline actions. Like the Tools panel, it SHALL be movable and SHALL reopen where the person last left it in that browser. Without a saved position it SHALL open at the top right, just below the top bar. It SHALL list every object on the canvas as one row, ordered from the frontmost object at the top to the backmost at the bottom, matching the order the canvas paints them. The canvas background colour SHALL NOT appear as a row. When the canvas has no objects, the panel SHALL show an empty state that says so.
+The editor SHALL show a Layers panel. It is the only panel for acting on objects; there is no separate Object panel. It SHALL be wide enough for a row's label and its inline actions. By default it SHALL be docked on the right edge of the window, below the top bar. Like the Tools panel, it SHALL be possible to pull it out to float and to dock it again, and it SHALL reopen docked or floating, where the person last left it in that browser (see the `workspace-panels` capability). It SHALL list every object on the canvas as one row, ordered from the frontmost object at the top to the backmost at the bottom, matching the order the canvas paints them. The canvas background colour SHALL NOT appear as a row. When the canvas has no objects, the panel SHALL show an empty state that says so.
 
 #### Scenario: Rows follow stacking order
 - **WHEN** the canvas holds an image, then a text box added after it, then a drawing added last
@@ -18,12 +18,12 @@ The editor SHALL show a Layers panel as a floating panel alongside the Tools pan
 - **THEN** the panel shows a message that there are no layers yet, and no rows
 
 #### Scenario: Panel position is remembered
-- **WHEN** the person moves the Layers panel and reloads the page
-- **THEN** the panel reopens where they left it
+- **WHEN** the person pulls the Layers panel out, moves it, and reloads the page
+- **THEN** the panel reopens floating where they left it
 
 #### Scenario: No Object panel
 - **WHEN** the editor loads, with or without a position saved for the old Object panel
-- **THEN** only the Tools and Layers panels are shown, and the Layers panel defaults to the top right below the top bar
+- **THEN** only the Tools and Layers panels are shown, and the Layers panel is docked on the right unless the person has pulled it out
 
 ### Requirement: Layer rows identify their object
 Each row SHALL show a small thumbnail of its object as it looks on the canvas, and a label. A text object's label SHALL be its text, shortened to fit on one line (whitespace-only text reads as "Empty text"). An image's label SHALL be "Image", a freehand stroke's "Drawing", and any other object's "Shape". Labels SHALL be derived from the object each time and SHALL NOT be stored in the scene.
