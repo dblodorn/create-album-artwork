@@ -53,9 +53,20 @@
 }
 
 /* WORKSPACE */
+.Main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.DockSpacer {
+  flex: 0 0 auto;
+}
+
 .Workspace {
   position: relative;
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   background: var(--rs-color-background-page);
   touch-action: none;
@@ -85,16 +96,45 @@
   height: 100%;
 }
 
-/* FLOATING PANELS */
+/* SIDE PANELS: docked at an edge, or floating. Square corners either way. */
 .Panel {
   position: fixed;
   display: flex;
   flex-direction: column;
   background: var(--rs-color-background-elevation-overlay);
   border: 1px solid var(--rs-color-border-neutral-faded);
-  border-radius: var(--rs-radius-medium);
   box-shadow: var(--rs-shadow-overlay-intense);
   user-select: none;
+}
+
+.Panel[data-docked='true'] {
+  border: none;
+  box-shadow: none;
+  background: var(--rs-color-background-elevation-base);
+}
+
+.Panel[data-docked='true'][data-side='left'] {
+  border-right: 1px solid var(--rs-color-border-neutral-faded);
+}
+
+.Panel[data-docked='true'][data-side='right'] {
+  border-left: 1px solid var(--rs-color-border-neutral-faded);
+}
+
+.Panel[data-docked='true'] .PanelBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.DockDropZone {
+  position: fixed;
+  top: 48px;
+  bottom: 0;
+  background: var(--rs-color-background-primary-faded);
+  border: 2px dashed var(--rs-color-border-primary);
+  pointer-events: none;
 }
 
 .PanelHeader {
@@ -162,6 +202,17 @@
 .LayerScroll {
   max-height: 50vh;
   overflow-y: auto;
+}
+
+/* Docked, the list fills the column instead of stopping at half the screen. */
+.Panel[data-docked='true'] .Layers {
+  flex: 1;
+  min-height: 0;
+}
+
+.Panel[data-docked='true'] .LayerScroll {
+  max-height: none;
+  flex: 1;
 }
 
 .LayersEmpty {

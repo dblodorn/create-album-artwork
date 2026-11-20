@@ -12,7 +12,7 @@ import { ColorEditor } from './ColorEditor'
 import { DrawingControls } from './DrawingControls'
 import { EditMenu } from './EditMenu'
 import { FileMenu } from './FileMenu'
-import { FloatingPanel } from './FloatingPanel'
+import { DockablePanel } from './DockablePanel'
 import { FontSelector } from './FontSelector'
 import { Select, Type } from './icons'
 import { ImagePicker } from './ImagePicker'
@@ -28,6 +28,7 @@ import { useCanvasLayers } from './lib/useCanvasLayers'
 import { useEditCommands } from './lib/useEditCommands'
 import { useEditorShortcuts } from './lib/useEditorShortcuts'
 import { useHistory } from './lib/useHistory'
+import { usePanelDock } from './lib/usePanelDock'
 import { useViewport } from './lib/useViewport'
 import { Workspace } from './Workspace'
 import { ZoomControls } from './ZoomControls'
@@ -44,6 +45,8 @@ export function CanvasEditor() {
 
   const workspaceRef = useRef<HTMLDivElement>(null)
   const viewport = useViewport(workspaceRef)
+  const toolsDock = usePanelDock('tools')
+  const layersDock = usePanelDock('layers')
 
   const history = useHistory(editor)
   const { reset: resetHistory } = history
@@ -231,19 +234,20 @@ export function CanvasEditor() {
         </View>
       </header>
 
-      <Workspace
-        workspaceRef={workspaceRef}
-        viewport={viewport}
-        canvas={editor?.canvas ?? null}
-        onReady={onReady}
-        onBackgroundPointerDown={handleDeselectActiveObject}
-      />
+      <div className={css.Main}>
+        {/* Docked panels are fixed to the edges; these spacers make room for them. */}
+        <div className={css.DockSpacer} style={{ width: toolsDock.docked ? toolsDock.width : 0 }} />
+        <Workspace
+          workspaceRef={workspaceRef}
+          viewport={viewport}
+          canvas={editor?.canvas ?? null}
+          onReady={onReady}
+          onBackgroundPointerDown={handleDeselectActiveObject}
+        />
+        <div className={css.DockSpacer} style={{ width: layersDock.docked ? layersDock.width : 0 }} />
+      </div>
 
-      <FloatingPanel
-        id="tools"
-        title="Tools"
-        defaultPosition={() => ({ x: 16, y: 64 })}
-      >
+      <DockablePanel title="Tools" side="left" dock={toolsDock}>
         <View gap={2} align="center">
           <Tooltip text="Select" position="end">
             {(attributes) => (
@@ -289,13 +293,9 @@ export function CanvasEditor() {
             onBackgroundColorChange={setBackgroundColor}
           />
         </View>
-      </FloatingPanel>
+      </DockablePanel>
 
-      <FloatingPanel
-        id="layers"
-        title="Layers"
-        defaultPosition={({ width }) => ({ x: window.innerWidth - width - 16, y: 64 })}
-      >
+      <DockablePanel title="Layers" side="right" dock={layersDock}>
         <LayersPanel
           layers={layers.layers}
           activeObject={layers.activeObject}
@@ -312,7 +312,7 @@ export function CanvasEditor() {
           }}
           onDelete={deleteSelected}
         />
-      </FloatingPanel>
+      </DockablePanel>
 
       <BackgroundRemovalModal
         target={cutoutTarget}

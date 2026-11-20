@@ -1,6 +1,7 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 
 import { ARTBOARD, MAX_ZOOM, MIN_ZOOM } from './constants'
+import { type WorkspaceBox, panAfterResize } from './panelDock'
 
 export interface Point {
   x: number
@@ -26,11 +27,13 @@ const fitView = (width: number, height: number): View => {
 // Zoom and pan for the workspace. `zoom` is CSS px per artboard unit and
 // `pan` is the artboard's top-left corner in workspace coordinates. The view
 // starts fitted (square artboard centred) and keeps refitting on resize until
-// the user zooms or pans.
+// the user zooms or pans. After that, docking or undocking a side panel keeps
+// the artboard still on screen, and a window resize keeps the centre centred.
 export function useViewport(workspaceRef: RefObject<HTMLElement | null>) {
   const [view, setView] = useState<View>({ zoom: 1, pan: { x: 0, y: 0 } })
   const [ready, setReady] = useState(false)
   const sizeRef = useRef({ width: 0, height: 0 })
+  const boxRef = useRef<WorkspaceBox | null>(null)
   const fittedRef = useRef(true)
 
   useEffect(() => {
@@ -40,20 +43,21 @@ export function useViewport(workspaceRef: RefObject<HTMLElement | null>) {
     const observer = new ResizeObserver(() => {
       const { clientWidth: width, clientHeight: height } = el
       if (!width || !height) return
-      const previous = sizeRef.current
       sizeRef.current = { width, height }
+      const previous = boxRef.current
+      const box: WorkspaceBox = {
+        left: el.getBoundingClientRect().left,
+        width,
+        height,
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight,
+      }
+      boxRef.current = box
 
-      if (fittedRef.current) {
+      if (fittedRef.current || !previous) {
         setView(fitView(width, height))
       } else {
-        // Keep whatever was centred still centred.
-        setView((v) => ({
-          ...v,
-          pan: {
-            x: v.pan.x + (width - previous.width) / 2,
-            y: v.pan.y + (height - previous.height) / 2,
-          },
-        }))
+        setView((v) => ({ ...v, pan: panAfterResize(v.pan, previous, box) }))
       }
       setReady(true)
     })
