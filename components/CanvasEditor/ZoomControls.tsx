@@ -1,6 +1,6 @@
-import { Button, View } from 'reshaped'
+import { Button } from 'reshaped'
 
-import { Hint } from '@/design'
+import { GlassToolbar, Hint } from '@/design'
 
 import type { Viewport } from './lib/useViewport'
 
@@ -12,13 +12,14 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
   const mod = isMac() ? '⌘' : 'Ctrl+'
 
   return (
-    <View direction="row" gap={1} align="center">
-      <Hint text={`Zoom out (${mod}−)`} position="bottom">
+    <GlassToolbar label="Zoom">
+      <Hint text={`Zoom out (${mod}−)`} position="top">
         {(attributes) => (
           <Button
             size="small"
             variant="ghost"
             color="neutral"
+            rounded
             attributes={attributes}
             onClick={() => zoomBy(0.8)}
           >
@@ -26,12 +27,13 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
           </Button>
         )}
       </Hint>
-      <Hint text={`Actual size (${mod}1)`} position="bottom">
+      <Hint text={`Actual size (${mod}1)`} position="top">
         {(attributes) => (
           <Button
             size="small"
             variant="ghost"
             color="neutral"
+            rounded
             attributes={{ ...attributes, style: { minWidth: 56 } }}
             onClick={() => zoomTo(1)}
           >
@@ -39,12 +41,13 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
           </Button>
         )}
       </Hint>
-      <Hint text={`Zoom in (${mod}+)`} position="bottom">
+      <Hint text={`Zoom in (${mod}+)`} position="top">
         {(attributes) => (
           <Button
             size="small"
             variant="ghost"
             color="neutral"
+            rounded
             attributes={attributes}
             onClick={() => zoomBy(1.25)}
           >
@@ -52,12 +55,13 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
           </Button>
         )}
       </Hint>
-      <Hint text={`Fit to screen (${mod}0)`} position="bottom">
+      <Hint text={`Fit to screen (${mod}0)`} position="top">
         {(attributes) => (
           <Button
             size="small"
             variant="ghost"
             color="neutral"
+            rounded
             attributes={attributes}
             onClick={fit}
           >
@@ -65,6 +69,6 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
           </Button>
         )}
       </Hint>
-    </View>
+    </GlassToolbar>
   )
 }

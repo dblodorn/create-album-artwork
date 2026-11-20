@@ -1,6 +1,6 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 
-import { ARTBOARD, MAX_ZOOM, MIN_ZOOM } from './constants'
+import { ARTBOARD, FIT_PADDING, MAX_ZOOM, MIN_ZOOM } from './constants'
 import { type WorkspaceBox, panAfterResize } from './panelDock'
 
 export interface Point {
@@ -12,9 +12,6 @@ interface View {
   zoom: number
   pan: Point
 }
-
-// Space left around the artboard when fitting it to the workspace.
-const FIT_PADDING = 64
 
 const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 

@@ -4,6 +4,12 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-20 — Zoom controls float at the bottom of the canvas
+
+- Zoom out, the zoom percentage, Zoom in and Fit now sit in a rounded, frosted-glass toolbar at the bottom centre of the canvas, out of the top bar.
+- The toolbar stays centred when you pull a panel out or dock it, and Fit always keeps your artwork clear of it.
+- Your artwork shows through softly when you zoom or pan beneath it; with reduced transparency turned on in your system settings, it's solid.
+
 ## 2026-11-20 — A new look, with light and dark modes
 
 - The editor now shares the look of the other dmbk apps (chime, vz10m, Sanzo Wada): the FFF typeface throughout, at the same small sizes as before.
