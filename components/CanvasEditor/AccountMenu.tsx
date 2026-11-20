@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Avatar, DropdownMenu, Loader, Text, View, useToast } from 'reshaped'
 
 import css from './CanvasEditor.module.css'
+import { useColorMode } from '@/design'
 import { SignInError, type Viewer, useViewer } from '@/lib/auth/client'
 
 /*
@@ -58,6 +59,7 @@ export function AccountMenu() {
 
 function SignInButton() {
   const { signIn } = useViewer()
+  const { mode } = useColorMode()
   const toast = useToast()
   const buttonRef = useRef<HTMLDivElement>(null)
   const [scriptReady, setScriptReady] = useState(
@@ -99,15 +101,17 @@ function SignInButton() {
       })
       gisInitialized = true
     }
+    // GIS draws the button itself, so it can't follow the theme's tokens:
+    // re-render it with the matching Google theme when the colour mode changes.
     buttonRef.current.replaceChildren()
     id.renderButton(buttonRef.current, {
       type: 'standard',
-      theme: 'filled_black',
+      theme: mode === 'dark' ? 'filled_black' : 'outline',
       size: 'medium',
       text: 'signin',
       shape: 'pill',
     })
-  }, [scriptReady, onCredential])
+  }, [scriptReady, onCredential, mode])
 
   if (!CLIENT_ID || scriptFailed) {
     return (
