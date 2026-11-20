@@ -31,6 +31,8 @@ const respond = (status: number, body: object) =>
 // route checks again on the server.
 const featuresFor = (viewer: Viewer | null) => ({
   backgroundRemoval: canUseBackgroundRemoval(viewer),
+  // Photos aren't tied to an account yet, so the collection is admin only.
+  photos: viewer?.isAdmin === true,
 })
 
 export async function GET(request: Request) {

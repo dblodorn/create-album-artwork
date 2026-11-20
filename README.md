@@ -7,7 +7,7 @@ A web-based layout editor for designing album artwork, built for the SoundCloud 
 ## Features
 
 - **Workspace:** a full-window canvas with zoom (10–800%) and pan. Tools docks on the left and Layers on the right. Drag a panel's title bar to pull it out and float it anywhere, or drop it back on its edge to dock it. The arrangement is remembered per browser.
-- **Images:** upload, paste a URL, or pick from **lora-trainer**'s public LoRA images (the picker's LoRA tab). Images are embedded in the scene, so they survive reloads.
+- **Images:** upload, paste a URL, pick from **lora-trainer**'s public LoRA images (the picker's LoRA tab), or, for admins, pick from the **dmbk-photos** collection (the Photos tab, with keyword search and infinite scroll). Images are embedded in the scene, so they survive reloads.
 - **Rotate** a selected object by dragging just outside any corner, or with the handle above it.
 - **Text** in 51 Google Fonts, **freehand drawing** with five brush styles and adjustable weight, and stroke and background colours.
 - **Layers panel:** every object, front to back, with thumbnails. Click a row to select, even objects hidden under others. Drag rows or press Alt+↑/↓ to reorder. The selected row has inline actions: a Transform popout (scale up / down by 1 unit, rotate 1° left / right, reset rotation; hold Shift for 10% and 15° steps), an Effects popout with **Blur** for any layer, Remove background on images, and Delete.
@@ -81,6 +81,7 @@ A local run reads and writes **production** data in the dmbk API unless `DMBK_GR
 - **Generative AI** via fal.ai: FLUX text-to-image, img2img from the canvas, and LoRA styles from [lora-trainer](https://github.com/dblodorn/lora-trainer).
 - **Publish to a public URI** on DigitalOcean Spaces (`dmbk-io` bucket), for attaching as SoundCloud artwork.
 - **Bring your own fal key**, so the allowlist isn't needed.
+- **Per-account photo collections:** once dmbk-photos records who owns each photo, the Photos tab shows each signed-in person their own photos, instead of being admin-only.
 - **Mobile audit and pass** ([#9](https://github.com/dblodorn/create-album-artwork/issues/9)), once the feature set settles.
 
 ## Docs

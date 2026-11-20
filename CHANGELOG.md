@@ -4,6 +4,14 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-20 — Photos tab: your dmbk-photos collection
+
+- The image picker has a new Photos tab that shows the dmbk-photos collection, newest first, with hidden photos marked "Hidden".
+- More photos load automatically as you scroll.
+- Search by keyword, comma-separated (for example "eastern sierras, seoul"). Only photos with every keyword are shown.
+- Picking a photo adds it to the canvas at display size, embedded in the scene like any other image.
+- Admins only for now. Signed out, the tab asks you to sign in; other accounts see that the collection isn't available.
+
 ## 2026-11-20 — Docked side panels
 
 - Tools now docks on the left and Layers on the right, as full-height sidebars, so they no longer cover the artboard. The canvas fits in the space between them.

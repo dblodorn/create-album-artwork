@@ -30,6 +30,16 @@ export type LoraTraining = {
   images: { edges: { node: GeneratedImage }[] }
 }
 
+export type DmbkPhoto = {
+  id: string
+  title: string | null
+  hidden: boolean | null
+  width: number | null
+  height: number | null
+  thumbUrl: string | null
+  displayUrl: string | null
+}
+
 type Operations = {
   LoraTrainings: {
     variables: { first: number; after?: string | null }
@@ -45,11 +55,22 @@ type Operations = {
       } | null
     }
   }
+  DmbkPhotos: {
+    variables: { first: number; after?: string | null; keywords?: string[] | null }
+    result: { dmbkPhotos: Connection<DmbkPhoto> }
+  }
 }
 
 export type OperationName = keyof Operations
 
-export type DmbkErrorKind = 'not_configured' | 'upstream' | 'bad_request'
+export type DmbkErrorKind =
+  | 'not_configured'
+  | 'upstream'
+  | 'bad_request'
+  | 'unauthenticated'
+  | 'forbidden'
+
+const KNOWN_ERRORS: DmbkErrorKind[] = ['not_configured', 'bad_request', 'unauthenticated', 'forbidden']
 
 export class DmbkError extends Error {
   constructor(public kind: DmbkErrorKind) {
@@ -76,9 +97,7 @@ export async function dmbkQuery<Op extends OperationName>(
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     const error = body?.error
-    throw new DmbkError(
-      error === 'not_configured' || error === 'bad_request' ? error : 'upstream'
-    )
+    throw new DmbkError(KNOWN_ERRORS.includes(error) ? error : 'upstream')
   }
   const { data } = (await res.json()) as { data: Operations[Op]['result'] }
   return data

@@ -5,6 +5,7 @@ import css from './CanvasEditor.module.css'
 import { Photo } from './icons'
 import { ImageUploader } from './ImageUploader'
 import { LoraBrowser } from './LoraBrowser'
+import { PhotosBrowser } from './PhotosBrowser'
 
 export function ImagePicker({
   onImageSelect,
@@ -73,6 +74,7 @@ export function ImagePicker({
             <Tabs.Item value="upload">Upload</Tabs.Item>
             <Tabs.Item value="url">URL</Tabs.Item>
             <Tabs.Item value="lora">LoRA</Tabs.Item>
+            <Tabs.Item value="photos">Photos</Tabs.Item>
           </Tabs.List>
           <Tabs.Panel value="upload">
             <ImageUploader handleSelectImage={handleSelectImage} busy={busy} />
@@ -103,6 +105,9 @@ export function ImagePicker({
           {/* Panels mount only while active, so nothing is fetched until opened. */}
           <Tabs.Panel value="lora">
             <LoraBrowser onSelect={handleSelectImage} />
+          </Tabs.Panel>
+          <Tabs.Panel value="photos">
+            <PhotosBrowser onSelect={handleSelectImage} />
           </Tabs.Panel>
         </Tabs>
       </Modal>

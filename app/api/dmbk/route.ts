@@ -1,5 +1,5 @@
 import { DmbkNotConfiguredError, callDmbkApi } from '@/lib/dmbk/api'
-import { readSessionToken } from '@/lib/auth/viewer'
+import { readSessionToken, viewerFromRequest } from '@/lib/auth/viewer'
 import { getOperation } from '@/lib/dmbk/operations'
 import { isSameOrigin } from '@/lib/http/sameOrigin'
 
@@ -13,6 +13,9 @@ import { isSameOrigin } from '@/lib/http/sameOrigin'
  * `Authorization: Bearer` when there is one. Only the named operations in `lib/dmbk/operations.ts` are
  * forwarded: forwarding query text would turn this route into a keyed relay
  * for anything the API can do, mutations included.
+ *
+ * Operations marked `access: 'admin'` are checked here first (401 signed
+ * out, 403 not an admin) and never reach the API otherwise.
  *
  * Errors carry a code and nothing from upstream; the cause is logged here.
  */
@@ -40,6 +43,13 @@ export async function POST(request: Request) {
   const operation = getOperation(name)
   const variables = operation?.parseVariables(rawVariables ?? {})
   if (!operation || !variables) return respond(400, { error: 'bad_request' })
+
+  if (operation.access === 'admin') {
+    // Fails closed: no session, an unknown one, or the API unable to say.
+    const viewer = await viewerFromRequest()
+    if (!viewer) return respond(401, { error: 'unauthenticated' })
+    if (!viewer.isAdmin) return respond(403, { error: 'forbidden' })
+  }
 
   try {
     // The viewer's session goes along when there is one. The API answers a

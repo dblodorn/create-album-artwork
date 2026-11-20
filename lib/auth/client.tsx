@@ -28,9 +28,9 @@ export type Viewer = {
 }
 
 /** Gated features the server says this viewer can use. UI only. */
-export type Features = { backgroundRemoval: boolean }
+export type Features = { backgroundRemoval: boolean; photos: boolean }
 
-const NO_FEATURES: Features = { backgroundRemoval: false }
+const NO_FEATURES: Features = { backgroundRemoval: false, photos: false }
 
 export type SessionStatus = 'loading' | 'signed-in' | 'signed-out' | 'unavailable'
 

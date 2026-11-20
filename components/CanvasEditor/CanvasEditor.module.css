@@ -428,6 +428,23 @@
   transform: scale(1.04);
 }
 
+.PhotoHidden {
+  position: absolute;
+  top: var(--rs-unit-x1);
+  left: var(--rs-unit-x1);
+  padding: 0 var(--rs-unit-x1);
+  border-radius: var(--rs-radius-small);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  pointer-events: none;
+}
+
+.ScrollSentinel {
+  height: 1px;
+}
+
 .LoraThumbBusy {
   position: absolute;
   inset: 0;
