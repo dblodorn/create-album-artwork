@@ -1,7 +1,7 @@
 /*
- * The few tokens the `dmbk` Reshaped theme has no slot for, plus the two
- * classes the visual language owns (Pill, Hint). Everything else comes from
- * the theme's --rs-* tokens.
+ * The few tokens the `dmbk` Reshaped theme has no slot for, plus the classes
+ * the visual language owns (Pill, Hint, glass, toolbar). Everything else comes
+ * from the theme's --rs-* tokens.
  */
 
 :root {
@@ -20,6 +20,21 @@
   /* The transparency checkerboard behind thumbnails: mid-grey in both modes. */
   --dmbk-checker-a: #8c8c8c;
   --dmbk-checker-b: #6e6e6e;
+
+  /*
+   * Glass: a floating surface over the workspace (the zoom toolbar). The
+   * theme's raised surface, slightly transparent, blurring what's beneath.
+   * At 78% the controls stay above 4.5:1 even over pure white or black
+   * artwork in either mode; if contrast falls short, raise the opacity, not
+   * the foreground.
+   */
+  --dmbk-glass-background: color-mix(in srgb, var(--rs-color-background-elevation-raised) 78%, transparent);
+  --dmbk-glass-background-solid: var(--rs-color-background-elevation-raised);
+  --dmbk-glass-blur: blur(16px) saturate(140%);
+  --dmbk-glass-border: color-mix(in srgb, var(--rs-color-border-neutral) 50%, transparent);
+
+  /* Distance from a floating toolbar to the edge it floats above. */
+  --dmbk-toolbar-gap: 16px;
 }
 
 /*
@@ -29,10 +44,12 @@
 [data-rs-color-mode='light'] {
   --dmbk-workspace: var(--rs-color-background-neutral-faded);
   --dmbk-document-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  --dmbk-glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 [data-rs-color-mode='dark'] {
   --dmbk-workspace: var(--rs-color-background-page);
   --dmbk-document-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --dmbk-glass-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 /*
@@ -53,4 +70,45 @@
 /* Hint: tooltip text in FFF Italic. */
 .dmbk-hint {
   font-style: italic;
+}
+
+/*
+ * Glass surface: translucent, blurring what's beneath, a hairline edge (an
+ * inset shadow, so it takes no layout) and a soft drop shadow. Goes solid
+ * where the browser can't blur, or when the person asks for less transparency.
+ */
+.dmbk-glass {
+  background: var(--dmbk-glass-background);
+  -webkit-backdrop-filter: var(--dmbk-glass-blur);
+  backdrop-filter: var(--dmbk-glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--dmbk-glass-border),
+    var(--dmbk-glass-shadow);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .dmbk-glass {
+    background: var(--dmbk-glass-background-solid);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .dmbk-glass {
+    background: var(--dmbk-glass-background-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/*
+ * Toolbar: a row of controls in a pill, the one rounded container (panels,
+ * popovers, menus and dialogs stay square). Where it floats is the app's job.
+ * The app's ZOOM_TOOLBAR_CLEARANCE (lib/constants.ts) depends on this padding
+ * and --dmbk-toolbar-gap: change them together.
+ */
+.dmbk-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rs-unit-x1);
+  padding: var(--rs-unit-x1);
+  border-radius: var(--rs-radius-circular);
+  max-width: calc(100% - 2 * var(--dmbk-toolbar-gap));
 }

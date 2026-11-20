@@ -8,5 +8,6 @@ export {
   type ColorMode,
   type ColorModeChoice,
 } from './colorMode'
+export { GlassToolbar } from './GlassToolbar'
 export { Hint, mergeTriggerAttributes } from './Hint'
 export { Pill } from './Pill'

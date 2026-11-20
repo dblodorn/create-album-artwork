@@ -230,7 +230,6 @@ export function CanvasEditor() {
           />
           <EditMenu commands={commands} />
         </View>
-        <ZoomControls viewport={viewport} />
         <View direction="row" gap={2} align="center">
           <AccountMenu />
         </View>
@@ -239,13 +238,20 @@ export function CanvasEditor() {
       <div className={css.Main}>
         {/* Docked panels are fixed to the edges; these spacers make room for them. */}
         <div className={css.DockSpacer} style={{ width: toolsDock.docked ? toolsDock.width : 0 }} />
-        <Workspace
-          workspaceRef={workspaceRef}
-          viewport={viewport}
-          canvas={editor?.canvas ?? null}
-          onReady={onReady}
-          onBackgroundPointerDown={handleDeselectActiveObject}
-        />
+        {/* The toolbar is the workspace's sibling, not its child, so its clicks
+            and wheel never reach the workspace's pan, zoom and deselect. */}
+        <div className={css.Stage}>
+          <Workspace
+            workspaceRef={workspaceRef}
+            viewport={viewport}
+            canvas={editor?.canvas ?? null}
+            onReady={onReady}
+            onBackgroundPointerDown={handleDeselectActiveObject}
+          />
+          <div className={css.ZoomToolbar}>
+            <ZoomControls viewport={viewport} />
+          </div>
+        </div>
         <div className={css.DockSpacer} style={{ width: layersDock.docked ? layersDock.width : 0 }} />
       </div>
 

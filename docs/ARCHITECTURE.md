@@ -151,7 +151,12 @@ The slider calls `setActiveItemBlur(value, false)` live (render only) and `(valu
   - `Pill` is a small, `rounded` Reshaped `Button` whose `.dmbk-pill` class sets 12 px uppercase tracked type and a 24 px height, through the Button's own CSS variables.
   - `Hint` is Reshaped's `Tooltip` with its text in italic. Where one button is both a Hint and a Popover trigger (the layer Transform and Effects buttons), `mergeTriggerAttributes` combines the two triggers' refs and handlers.
   - `design/usage.test.ts` fails if app code imports Reshaped's `Tooltip`.
+  - `GlassToolbar` is a `role="toolbar"` row in a rounded glass pill (`.dmbk-glass .dmbk-toolbar`), the one rounded container. It's only the surface; the app positions it.
 - **Tokens.** Chrome colours are `--rs-*` theme tokens, or `--dmbk-*` from `design/tokens.css`. Image overlays and badges stay dark in both modes because they sit on photos. The checkerboard stays grey. The workspace is a faded grey in light and the page colour in dark. The artboard's shadow is soft in light and deep in dark.
+- **Glass and the zoom toolbar.**
+  - `.dmbk-glass` is the theme's raised surface at 78% (`color-mix`), behind `blur(16px) saturate(140%)`, with a hairline inset ring and a per-mode soft shadow. It turns solid where `backdrop-filter` is unsupported and under `prefers-reduced-transparency: reduce`. Composited over flat white or black, the controls measure at least 9.75:1 in light and 7.54:1 in dark.
+  - The zoom toolbar floats bottom centre of the workspace. `CanvasEditor` wraps `Workspace` in a `.Stage` and renders the toolbar as the workspace's sibling. The workspace's wheel listener and capturing pan `pointerdown` live on the workspace element, so the toolbar's input never reaches them, with no `stopPropagation`. A full-width wrapper with `pointer-events: none` centres it, and clicks beside it reach the canvas. The stage has no z-index, so fixed panels stack above the toolbar.
+  - Fit is unchanged: `FIT_PADDING` (64) is above the toolbar's reach (`ZOOM_TOOLBAR_CLEARANCE`, 52: gap 16 + 36 px pill), and `constants.test.ts` keeps at least 8 px between them.
 - **Colour mode.**
   - The choice (light, dark or system) is `localStorage["dmbk-color-mode"]`, read by `design/colorMode.ts`.
   - **First paint:** the server renders `data-rs-color-mode="dark"`, and `COLOR_MODE_SCRIPT`, inline in `<head>`, resolves the stored choice against `prefers-color-scheme` before `<body>` parses, so there's no flash.

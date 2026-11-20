@@ -63,6 +63,37 @@
   flex: 0 0 auto;
 }
 
+/*
+ * The workspace plus what floats over it. No z-index, so docked and floating
+ * panels (fixed, later in the DOM) still stack above the toolbar.
+ */
+.Stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+/*
+ * Bottom centre of the workspace (ZOOM_TOOLBAR_CLEARANCE in lib/constants.ts
+ * counts on this gap). The full-width wrapper lets clicks through to the
+ * canvas; only the toolbar itself takes them.
+ */
+.ZoomToolbar {
+  position: absolute;
+  bottom: var(--dmbk-toolbar-gap);
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.ZoomToolbar > * {
+  pointer-events: auto;
+}
+
 .Workspace {
   position: relative;
   flex: 1;
