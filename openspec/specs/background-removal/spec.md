@@ -7,15 +7,15 @@ Lets someone making album artwork cut the subject out of an image layer, or keep
 ## Requirements
 
 ### Requirement: Remove background is offered for image layers
-The editor SHALL offer a Remove background action in the Object panel, and on the selected row of the Layers panel when that panel is present. The action SHALL be enabled only when exactly one image layer is selected and freehand drawing is off. With text, a drawing, a shape, several objects, or nothing selected, the action SHALL be shown disabled.
+The editor SHALL offer a Remove background action among the inline actions of the selected layer's row in the Layers panel, on image rows only. Because only the selected row shows actions, the action appears only when exactly one image layer is selected. With text, a drawing, a shape, several objects, or nothing selected, no row offers it. While freehand drawing is on, it SHALL be shown disabled.
 
 #### Scenario: Image selected
 - **WHEN** an allowed, signed-in person selects one image layer
-- **THEN** the Remove background action is enabled in the Object panel and on that image's row in the Layers panel
+- **THEN** the Remove background action is enabled on that image's row in the Layers panel
 
 #### Scenario: Non-image selected
 - **WHEN** the selection is a text box, a drawing, a shape, or several objects
-- **THEN** the Remove background action is shown disabled
+- **THEN** no row offers Remove background (text, drawing and shape rows don't have it, and a multi-selection shows no row actions)
 
 ### Requirement: Only allowlisted accounts may use it
 Use SHALL be limited to accounts whose email is on a server-configured allowlist, compared case-insensitively. An empty or missing allowlist SHALL admit nobody. Being an admin of the dmbk accounts SHALL NOT grant access by itself. When signed out, the action SHALL remain visible and SHALL say that signing in is required. When signed in with an account not on the list, it SHALL remain visible and SHALL say it isn't available for this account. The server SHALL resolve the account from the session on every request and SHALL refuse a request from anyone not on the allowlist, whatever the browser claims, without contacting fal.ai.
