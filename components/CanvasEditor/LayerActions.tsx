@@ -1,6 +1,8 @@
 import type { FabricObject } from 'fabric'
 import { type KeyboardEvent, type SyntheticEvent, useState } from 'react'
-import { Button, Popover, Slider, Text, Tooltip, View } from 'reshaped'
+import { Button, Popover, Slider, Text, View } from 'reshaped'
+
+import { Hint, Pill, mergeTriggerAttributes } from '@/design'
 
 import { Effects, RotateLeft, RotateRight, ScaleDown, ScaleUp, Transform, Trash } from './icons'
 import { SHORTCUTS_OFF } from './lib/keyboard'
@@ -65,18 +67,27 @@ export function LayerActions({
   const blurSupported = canvasBlurSupported()
   return (
     <span {...guard} style={{ display: 'inline-flex', alignItems: 'center' }}>
-      {/* No Reshaped Tooltip on the trigger: it would fight the popover over
-          the button's ref and handlers. Transform has no shortcut; a title does. */}
+      {/* One button triggers both the hint and the popout, so their refs and
+          handlers are merged. The hint sits on top, clear of the popout below. */}
       <Popover position="bottom-end" onAfterClose={releaseTriggerFocus}>
         <Popover.Trigger>
-          {(attributes) => (
-            <Button
-              size="small"
-              variant="ghost"
-              icon={Transform}
-              disabled={isDrawing}
-              attributes={{ ...attributes, 'aria-label': 'Transform', title: 'Transform', [RELEASE_ATTR]: '' }}
-            />
+          {(popoverAttributes) => (
+            <Hint text="Transform" position="top">
+              {(hintAttributes) => (
+                <Button
+                  size="small"
+                  rounded
+                  variant="ghost"
+                  icon={Transform}
+                  disabled={isDrawing}
+                  attributes={{
+                    ...mergeTriggerAttributes(hintAttributes, popoverAttributes),
+                    'aria-label': 'Transform',
+                    [RELEASE_ATTR]: '',
+                  }}
+                />
+              )}
+            </Hint>
           )}
         </Popover.Trigger>
         {/* Rendered in a portal, outside the panel's shortcuts-off region. */}
@@ -87,22 +98,28 @@ export function LayerActions({
                 Scale
               </Text>
               <View direction="row" gap={1}>
-                <Button
-                  size="small"
-                  icon={ScaleUp}
-                  onClick={(e) => onScale('up', e.shiftKey)}
-                  attributes={{ 'aria-label': 'Scale up 1 unit (Shift: 10%)', title: 'Scale up 1 unit · Shift: 10%' }}
-                >
-                  Up
-                </Button>
-                <Button
-                  size="small"
-                  icon={ScaleDown}
-                  onClick={(e) => onScale('down', e.shiftKey)}
-                  attributes={{ 'aria-label': 'Scale down 1 unit (Shift: 10%)', title: 'Scale down 1 unit · Shift: 10%' }}
-                >
-                  Down
-                </Button>
+                <Hint text="Scale up 1 unit · Shift: 10%">
+                  {(attributes) => (
+                    <Pill
+                      icon={ScaleUp}
+                      onClick={(e) => onScale('up', e.shiftKey)}
+                      attributes={{ ...attributes, 'aria-label': 'Scale up 1 unit (Shift: 10%)' }}
+                    >
+                      Up
+                    </Pill>
+                  )}
+                </Hint>
+                <Hint text="Scale down 1 unit · Shift: 10%">
+                  {(attributes) => (
+                    <Pill
+                      icon={ScaleDown}
+                      onClick={(e) => onScale('down', e.shiftKey)}
+                      attributes={{ ...attributes, 'aria-label': 'Scale down 1 unit (Shift: 10%)' }}
+                    >
+                      Down
+                    </Pill>
+                  )}
+                </Hint>
               </View>
             </View>
             <View gap={1}>
@@ -110,26 +127,29 @@ export function LayerActions({
                 Rotate · <span aria-live="polite">{angle}°</span>
               </Text>
               <View direction="row" gap={1}>
-                <Button
-                  size="small"
-                  icon={RotateLeft}
-                  onClick={(e) => onRotate(e.shiftKey ? -ROTATE_STEP : -1)}
-                  attributes={{
-                    'aria-label': `Rotate left 1° (Shift: ${ROTATE_STEP}°)`,
-                    title: `Rotate left 1° · Shift: ${ROTATE_STEP}°`,
-                  }}
-                />
-                <Button
-                  size="small"
-                  icon={RotateRight}
-                  onClick={(e) => onRotate(e.shiftKey ? ROTATE_STEP : 1)}
-                  attributes={{
-                    'aria-label': `Rotate right 1° (Shift: ${ROTATE_STEP}°)`,
-                    title: `Rotate right 1° · Shift: ${ROTATE_STEP}°`,
-                  }}
-                />
-                <Button
-                  size="small"
+                <Hint text={`Rotate left 1° · Shift: ${ROTATE_STEP}°`}>
+                  {(attributes) => (
+                    <Button
+                      size="small"
+                      rounded
+                      icon={RotateLeft}
+                      onClick={(e) => onRotate(e.shiftKey ? -ROTATE_STEP : -1)}
+                      attributes={{ ...attributes, 'aria-label': `Rotate left 1° (Shift: ${ROTATE_STEP}°)` }}
+                    />
+                  )}
+                </Hint>
+                <Hint text={`Rotate right 1° · Shift: ${ROTATE_STEP}°`}>
+                  {(attributes) => (
+                    <Button
+                      size="small"
+                      rounded
+                      icon={RotateRight}
+                      onClick={(e) => onRotate(e.shiftKey ? ROTATE_STEP : 1)}
+                      attributes={{ ...attributes, 'aria-label': `Rotate right 1° (Shift: ${ROTATE_STEP}°)` }}
+                    />
+                  )}
+                </Hint>
+                <Pill
                   disabled={angle === 0}
                   onClick={(e) => {
                     // Reset disables itself; move focus to Rotate left first, so it
@@ -139,7 +159,7 @@ export function LayerActions({
                   }}
                 >
                   Reset
-                </Button>
+                </Pill>
               </View>
             </View>
           </View>
@@ -147,14 +167,23 @@ export function LayerActions({
       </Popover>
       <Popover position="bottom-end" onAfterClose={releaseTriggerFocus}>
         <Popover.Trigger>
-          {(attributes) => (
-            <Button
-              size="small"
-              variant="ghost"
-              icon={Effects}
-              disabled={isDrawing}
-              attributes={{ ...attributes, 'aria-label': 'Effects', title: 'Effects', [RELEASE_ATTR]: '' }}
-            />
+          {(popoverAttributes) => (
+            <Hint text="Effects" position="top">
+              {(hintAttributes) => (
+                <Button
+                  size="small"
+                  rounded
+                  variant="ghost"
+                  icon={Effects}
+                  disabled={isDrawing}
+                  attributes={{
+                    ...mergeTriggerAttributes(hintAttributes, popoverAttributes),
+                    'aria-label': 'Effects',
+                    [RELEASE_ATTR]: '',
+                  }}
+                />
+              )}
+            </Hint>
           )}
         </Popover.Trigger>
         <Popover.Content attributes={{ ...SHORTCUTS_OFF, ...guard }}>
@@ -163,9 +192,7 @@ export function LayerActions({
               <Text variant="caption-1" color="neutral-faded">
                 Blur · <span aria-live="polite">{blur}</span>
               </Text>
-              <Button
-                size="small"
-                variant="ghost"
+              <Pill
                 disabled={blur === 0 || !blurSupported}
                 onClick={(e) => {
                   // Keep focus in the popout when Reset disables itself.
@@ -176,7 +203,7 @@ export function LayerActions({
                 }}
               >
                 Reset
-              </Button>
+              </Pill>
             </View>
             <Slider
               name="blur"
@@ -211,10 +238,11 @@ export function LayerActions({
           tooltipPosition="bottom"
         />
       )}
-      <Tooltip text="Delete ⌫" position="bottom">
+      <Hint text="Delete ⌫" position="bottom">
         {(attributes) => (
           <Button
             size="small"
+            rounded
             variant="ghost"
             icon={Trash}
             onClick={onDelete}
@@ -222,7 +250,7 @@ export function LayerActions({
             attributes={{ ...attributes, 'aria-label': 'Delete' }}
           />
         )}
-      </Tooltip>
+      </Hint>
     </span>
   )
 }

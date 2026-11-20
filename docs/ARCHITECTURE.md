@@ -141,6 +141,24 @@ Rendering wraps the base `render` (text, images, paths and shapes all reach it).
 
 The slider calls `setActiveItemBlur(value, false)` live (render only) and `(value, true)` on release, which runs `commit('Blur')`. `CanvasEditor` tags those commits with `history.markMerge('blur')`, so a run of arrow-key steps within 1 s is one undo step, the way nudges are.
 
+## 1g. Visual language and colour mode (`design/`)
+
+`design/` holds the dmbk visual language, shared in look with chime, vz10m and Sanzo Wada, with dmbk-photo next. It imports nothing from the app (`design/boundary.test.ts`), so it can be lifted out. `design/README.md` is the integration guide.
+
+- **Theme.** `design/reshaped.config.mjs` defines the `dmbk` Reshaped theme: dmbk-photo's monochrome ramp, which `generateThemeColors` derives for light and dark; radii 0, so containers are square; and every font family `var(--font-fff)` with system fallbacks. Type sizes stay at Reshaped's defaults, identical to slate's. `npm run theme` compiles it into `design/themes/dmbk/`, which is checked in. `postcss.config.js` points Reshaped's custom-media inlining at that theme's `media.css`.
+- **Type.** FFF (Luzi Type), Regular and Italic, from `design/fonts/` via `next/font/local` as one family (`--font-fff`). Its licence forbids converting the files, so they are the original `.woff` files. Canvas text and the font picker keep their Google Fonts.
+- **Components.**
+  - `Pill` is a small, `rounded` Reshaped `Button` whose `.dmbk-pill` class sets 12 px uppercase tracked type and a 24 px height, through the Button's own CSS variables.
+  - `Hint` is Reshaped's `Tooltip` with its text in italic. Where one button is both a Hint and a Popover trigger (the layer Transform and Effects buttons), `mergeTriggerAttributes` combines the two triggers' refs and handlers.
+  - `design/usage.test.ts` fails if app code imports Reshaped's `Tooltip`.
+- **Tokens.** Chrome colours are `--rs-*` theme tokens, or `--dmbk-*` from `design/tokens.css`. Image overlays and badges stay dark in both modes because they sit on photos. The checkerboard stays grey. The workspace is a faded grey in light and the page colour in dark. The artboard's shadow is soft in light and deep in dark.
+- **Colour mode.**
+  - The choice (light, dark or system) is `localStorage["dmbk-color-mode"]`, read by `design/colorMode.ts`.
+  - **First paint:** the server renders `data-rs-color-mode="dark"`, and `COLOR_MODE_SCRIPT`, inline in `<head>`, resolves the stored choice against `prefers-color-scheme` before `<body>` parses, so there's no flash.
+  - **After hydration:** `ColorModeProvider` holds the choice and the OS preference, listening for `change` on the media query and for `storage` events from other tabs. It passes the resolved mode to `<Reshaped colorMode>` and writes it to `<html>` itself, because Reshaped 4.1 doesn't for a controlled mode.
+  - **The menu:** the 🎨 menu's Appearance items are `menuitemradio`s, with ✓ on the current one.
+  - **Fabric is never involved,** so the artboard, export, autosave and undo are identical in every mode.
+
 ## 2. v0 gaps for the album-artwork use-case
 
 | Gap | Where | Fix |

@@ -19,6 +19,7 @@ npm run start   # next start
 npm run typecheck  # tsc --noEmit
 npm test           # vitest run (unit tests)
 npm run test:watch # vitest in watch mode
+npm run theme      # recompile the `dmbk` Reshaped theme (design/reshaped.config.mjs → design/themes/dmbk/, checked in)
 ```
 
 No lint configured; run `typecheck`, `test` and `build` before committing.
@@ -30,9 +31,9 @@ No lint configured; run `typecheck`, `test` and `build` before committing.
 | Layer | Tech | Notes |
 |-------|------|-------|
 | Framework | Next.js 16.2 (App Router) | `app/` dir: one page (`page.tsx`) + route handlers (`api/dmbk`, `api/session`, `api/background-removal`) |
-| UI | React 19.2 + Reshaped 4.1 | `slate` theme, dark mode (`data-rs-color-mode="dark"`) |
+| UI | React 19.2 + Reshaped 4.1 | `dmbk` theme from `design/` (monochrome, square, FFF); light / dark / system colour mode |
 | Canvas | Fabric.js 7.4 | `Canvas`, `Textbox`, `Image`, free-draw brush |
-| Fonts | Google Fonts runtime `@import` | 51 families in `lib/googleFonts.tsx` |
+| Fonts | FFF (interface, `next/font/local`); Google Fonts runtime `@import` (canvas text) | FFF in `design/fonts/`; 51 canvas families in `lib/googleFonts.tsx` |
 
 `next.config.ts` uses `transpilePackages: ["reshaped"]` + `optimizePackageImports: ["reshaped"]`. Import Reshaped components from `"reshaped"` (per-component CSS via PostCSS), not `"reshaped/bundle"`.
 
@@ -40,9 +41,9 @@ No lint configured; run `typecheck`, `test` and `build` before committing.
 
 ```
 app/
-  layout.tsx          # Root: dark-mode slate theme, globals.css
+  layout.tsx          # Root: dmbk theme + colour-mode attributes on <html>, COLOR_MODE_SCRIPT, FFF variable, theme/token CSS
   page.tsx            # Client component → <App> → <CanvasEditor>
-  App.tsx             # <Reshaped theme="slate"> + <SessionProvider> wrapper
+  App.tsx             # <ColorModeProvider> (Reshaped, dmbk theme) + <SessionProvider> wrapper
   api/dmbk/route.ts   # POST { operation, variables } → dmbk GraphQL API with X-API-Key (allowlisted ops only)
   api/session/route.ts # GET { viewer, features } | POST { idToken } sign in | DELETE sign out; HTTP-only session cookie
   api/background-removal/route.ts     # POST multipart { image, model, prompt? } → { job } (fal storage + queue submit)
@@ -120,11 +121,22 @@ lib/
     operations.ts       # server-only: allowlisted query text + variable validators; `access: 'admin'` ops (DmbkPhotos) gated in the route
     client.ts           # browser: dmbkQuery(op, vars) → /api/dmbk, hand-written result types, DmbkError
     useConnection.ts    # paginated Relay connection: items, loadMore, retry, stale-key drop
+design/                 # the dmbk visual language, self-contained (no app imports; boundary.test.ts) so other apps can reuse it. README.md says how
+  reshaped.config.mjs   # `dmbk` theme: monochrome ramp, radii 0, font families → var(--font-fff); compiled to themes/dmbk/ (checked in)
+  tokens.css            # --dmbk-* tokens (pill, overlays, checkerboard, workspace, document shadow) + .dmbk-pill / .dmbk-hint
+  fonts.ts, fonts/      # FFF Regular + Italic (.woff, licensed, unmodified) via next/font/local → --font-fff
+  colorMode.ts          # pure: choices, STORAGE_KEY, resolveMode, COLOR_MODE_SCRIPT (pre-paint inline script)
+  ColorModeProvider.tsx # <Reshaped theme colorMode> + useColorMode() → { choice, mode, setChoice }
+  Pill.tsx              # text button: small, rounded, uppercase caption type
+  Hint.tsx              # tooltip in FFF Italic; mergeTriggerAttributes for a Hint + Popover on one button
+  usage.test.ts         # fails if app code imports Reshaped's Tooltip
 ```
 
 ## Key patterns
 
 - **Artboard**: scene coordinates are always 1000×1000 units (`ARTBOARD`). The workspace zoom (`useViewport`, CSS px per unit, 10%–800%) drives `setCanvasDisplaySize`: the backing store follows the on-screen size (capped at `MAX_BACKSTORE` 2048, then CSS-stretched) and `canvas.setZoom(backing / ARTBOARD)` maps the artboard onto it, so text and paths stay sharp. **`canvas.width` is therefore not the artboard size** — use `ARTBOARD` for layout, and export divides by `canvas.width`. Zoom/viewport aren't serialized by `toJSON`. Panning moves the artboard with a CSS transform; Fabric recomputes its offset on every pointer event. Fabric 7 has no default brush; a `PencilBrush` is created on mount.
+- **Visual language** (`design/`, `docs/ARCHITECTURE.md` §1g): the `dmbk` Reshaped theme (shared look with chime, vz10m, Sanzo Wada; next consumer dmbk-photo). Interface type is FFF at Reshaped's default sizes; canvas text keeps its Google Fonts. **Text buttons are `Pill`, tooltips are `Hint` (never import Reshaped's `Tooltip`; a test checks), icon-only `Button`s get `rounded`.** The File/Edit menu titles and zoom controls stay plain (a toolbar). Containers (panels, popovers, menus, dialogs) are square. Chrome colours come from `--rs-*` / `--dmbk-*` tokens only, never literals, so both modes work; image overlays stay dark and the checkerboard grey in both. FFF lacks ⌘ ⇧ ⌥ and arrows: the font stack's fallbacks draw them. FFF's licence: self-hosted only, one domain per licence, no format conversion (see `design/README.md`).
+- **Colour mode**: Light / Dark / System in the 🎨 menu (`useColorMode`), stored in `localStorage["dmbk-color-mode"]`, System by default and followed live. The server renders `data-rs-color-mode="dark"`; `COLOR_MODE_SCRIPT` in `<head>` applies the stored or system mode before first paint. Reshaped 4.1 doesn't write `<html>`'s attribute for a controlled `colorMode`, so `ColorModeProvider` does. The mode never touches Fabric: artboard, scene, export, autosave and undo are unaffected.
 - **Layout**: full-window app (`.App` fixed inset 0). Top bar (🎨/File/Edit menus, zoom, account), then `.Main`: a left dock spacer, the `Workspace` and a right dock spacer. The side panels are `DockablePanel`s: Tools docks left and Layers right (the selected layer's row carries its actions; there is no Object panel). They start docked. Dragging a title bar more than 4 px pulls a panel out to float, and dropping it within 48 px of its own edge docks it again. A panel never moves in the React tree (docked = `position: fixed` pinned to its edge, with its spacer sized from the measured width), so its contents never remount. State lives in `usePanelDock` and is stored as `{ docked, x, y }` in `localStorage["canvas-editor-panel:<id>"]` (per-browser convenience only). Old `{ x, y }` entries read as docked. Panels have square corners.
 - **Editor API** (`useFabricJSEditor`): wraps the raw Fabric `Canvas` in a typed object (`addText`, `deleteSelected`, `setStrokeColor`, `setBackgroundColor`, `setFont`, …). Built **once per canvas** (`useMemo`); colours and font live in refs, so the editor identity is stable. Any mutation made directly on `editor.canvas` that Fabric doesn't report via `object:added/removed/modified` (property `set()`, background, z-order, scaling) must call `editor.commit()`, which re-renders, schedules an autosave and notifies `editor.subscribe()` listeners (the Layers panel relies on this, since Fabric fires no event for z-order changes).
 - **Object types**: Fabric 7 reports `type` as the lowercased class name (`'textbox'`, not `'text'`). Use `isText`/`isImage`/`isPath` from `lib/objectTypes.ts`, never string compares.
@@ -177,7 +189,7 @@ The URL tab in `ImagePicker` accepts arbitrary URLs today. Before server-side fe
 - Client components everywhere except `layout.tsx` and `app/api/` (`"use client"` on `page.tsx`, `App.tsx`, all of `CanvasEditor`). Server-only modules `import 'server-only'`.
 - Absolute imports via `@/*` → repo root.
 - Icons are hand-rolled SVG React components in `components/CanvasEditor/icons/` (not lucide here).
-- Styling: Reshaped props + `CanvasEditor.module.css` (CSS module). Circle buttons = `.CircleButton` class.
+- Styling: Reshaped props + `CanvasEditor.module.css` (CSS module), colours from tokens only. Text buttons = `Pill`, tooltips = `Hint` (from `@/design`); circle buttons = `.CircleButton` class.
 - Fonts: add a family to `googleFontFamilies` in `lib/googleFonts.tsx`; `<GoogleFontImport>` injects the `@import` per item.
 
 ## Env

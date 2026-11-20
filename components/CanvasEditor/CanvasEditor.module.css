@@ -68,7 +68,7 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  background: var(--rs-color-background-page);
+  background: var(--dmbk-workspace);
   touch-action: none;
 }
 
@@ -88,7 +88,7 @@
   left: 0;
   box-shadow:
     0 0 0 1px var(--rs-color-border-neutral),
-    0 12px 40px rgba(0, 0, 0, 0.45);
+    var(--dmbk-document-shadow);
 }
 
 .CanvasMount {
@@ -268,12 +268,12 @@
   border-radius: var(--rs-radius-small);
   overflow: hidden;
   /* Mid-grey checkerboard so both white and black content stay visible. */
-  background-color: #8c8c8c;
+  background-color: var(--dmbk-checker-a);
   background-image:
-    linear-gradient(45deg, #6e6e6e 25%, transparent 25%),
-    linear-gradient(-45deg, #6e6e6e 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #6e6e6e 75%),
-    linear-gradient(-45deg, transparent 75%, #6e6e6e 75%);
+    linear-gradient(45deg, var(--dmbk-checker-b) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--dmbk-checker-b) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--dmbk-checker-b) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--dmbk-checker-b) 75%);
   background-size: 10px 10px;
   background-position: 0 0, 0 5px, 5px -5px, -5px 0;
 
@@ -319,12 +319,12 @@
   height: 280px;
   border-radius: var(--rs-radius-medium);
   overflow: hidden;
-  background-color: #8c8c8c;
+  background-color: var(--dmbk-checker-a);
   background-image:
-    linear-gradient(45deg, #6e6e6e 25%, transparent 25%),
-    linear-gradient(-45deg, #6e6e6e 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #6e6e6e 75%),
-    linear-gradient(-45deg, transparent 75%, #6e6e6e 75%);
+    linear-gradient(45deg, var(--dmbk-checker-b) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--dmbk-checker-b) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--dmbk-checker-b) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--dmbk-checker-b) 75%);
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
 
@@ -345,8 +345,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--rs-unit-x2);
-  background: rgb(0 0 0 / 0.45);
-  color: #fff;
+  background: var(--dmbk-overlay-faded);
+  color: var(--dmbk-on-overlay);
 }
 
 /* IMAGE GRID */
@@ -434,8 +434,8 @@
   left: var(--rs-unit-x1);
   padding: 0 var(--rs-unit-x1);
   border-radius: var(--rs-radius-small);
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
+  background: var(--dmbk-overlay);
+  color: var(--dmbk-on-overlay);
   font-size: 11px;
   line-height: 18px;
   pointer-events: none;
@@ -451,7 +451,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--dmbk-overlay-faded);
 }
 
 .ImageButton {
@@ -502,7 +502,7 @@
 }
 
 .CircleButton {
-  box-shadow: 0px 0px 5px 0px rgba(0, 0, 0, 0.125);
+  box-shadow: var(--rs-shadow-raised);
   position: relative;
   & > span {
     width: 100%;
@@ -534,7 +534,10 @@
   border-radius: 999px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0px 0px 5px 0px rgba(0, 0, 0, 0.125);
+  /* A ring, so a swatch matching the panel (white on light) stays visible. */
+  box-shadow:
+    0 0 0 1px var(--rs-color-border-neutral),
+    var(--rs-shadow-raised);
   &:disabled > span {
     cursor: not-allowed !important;
   }
@@ -569,5 +572,5 @@
 }
 
 .FontButton {
-  box-shadow: 0px 0px 5px 0px rgba(0, 0, 0, 0.125);
+  box-shadow: var(--rs-shadow-raised);
 }

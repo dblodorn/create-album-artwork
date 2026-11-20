@@ -4,6 +4,15 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-20 — A new look, with light and dark modes
+
+- The editor now shares the look of the other dmbk apps (chime, vz10m, Sanzo Wada): the FFF typeface throughout, at the same small sizes as before.
+- Text buttons are small uppercase pills, and tooltips are set in FFF Italic.
+- The interface is monochrome, with square panels, menus and dialogs, so the colour is all in your artwork.
+- The browser tab shows the same icon as chime and vz10m.
+- Choose **Light**, **Dark** or **System** from the 🎨 menu. System is now the default, so on a light-mode computer the editor opens light. Your choice is remembered in this browser.
+- The appearance never changes the artwork: the canvas, PNG export and undo history are the same in every mode.
+
 ## 2026-11-20 — Photos tab: your dmbk-photos collection
 
 - The image picker has a new Photos tab that shows the dmbk-photos collection, newest first, with hidden photos marked "Hidden".

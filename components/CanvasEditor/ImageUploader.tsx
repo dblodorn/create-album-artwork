@@ -1,6 +1,8 @@
 import { useCallback } from 'react'
 import { Button, Image, Loader, Text, View } from 'reshaped'
 
+import { Pill } from '@/design'
+
 import css from './CanvasEditor.module.css'
 import { useImageUpload } from './lib'
 
@@ -82,27 +84,13 @@ export function ImageUploader({
           style={{ display: 'none' }}
         />
         {image ? (
-          <Button
-            rounded
-            size="large"
-            variant="solid"
-            color="neutral"
-            onClick={useImageHandler}
-            loading={busy}
-          >
-            Use Image
-          </Button>
+          <Pill onClick={useImageHandler} loading={busy}>
+            Use image
+          </Pill>
         ) : (
-          <Button
-            rounded
-            size="large"
-            variant="solid"
-            color="neutral"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-          >
+          <Pill onClick={() => fileInputRef.current?.click()} disabled={uploading}>
             Select image
-          </Button>
+          </Pill>
         )}
       </View>
     </View>

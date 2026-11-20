@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FabricObject } from 'fabric'
-import { Button, Popover, Radio, RadioGroup, Slider, Text, Tooltip, View } from 'reshaped'
+import { Button, Popover, Radio, RadioGroup, Slider, Text, View } from 'reshaped'
+
+import { Hint } from '@/design'
 
 import css from './CanvasEditor.module.css'
 import { Brush, Draw, LineWeight } from './icons'
@@ -52,7 +54,7 @@ export function DrawingControls({
 
   return (
     <View gap={2}>
-      <Tooltip text={!isDrawing ? 'Draw' : 'Stop'} position="end">
+      <Hint text={!isDrawing ? 'Draw' : 'Stop'} position="end">
         {(attributes) => (
           <Button
             size="small"
@@ -64,7 +66,7 @@ export function DrawingControls({
             attributes={attributes}
           />
         )}
-      </Tooltip>
+      </Hint>
       <View gap={2} direction="row">
         <Popover triggerType="hover" position="end">
           <Popover.Trigger>

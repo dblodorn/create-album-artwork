@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
-import { Button, Modal, Tabs, TextField, Tooltip, View } from 'reshaped'
+import { Button, Modal, Tabs, TextField, View } from 'reshaped'
+
+import { Hint, Pill } from '@/design'
 
 import css from './CanvasEditor.module.css'
 import { Photo } from './icons'
@@ -50,7 +52,7 @@ export function ImagePicker({
 
   return (
     <>
-      <Tooltip text={text} position="end">
+      <Hint text={text} position="end">
         {(attributes) => (
           <Button
             size="small"
@@ -63,7 +65,7 @@ export function ImagePicker({
             className={css.CircleButton}
           />
         )}
-      </Tooltip>
+      </Hint>
       <Modal
         active={showModal}
         onClose={() => setShowModal(false)}
@@ -89,17 +91,9 @@ export function ImagePicker({
                   onChange={({ value }: any) => setUrlInput(value)}
                 />
               </View>
-              <Button
-                rounded
-                size="large"
-                variant="solid"
-                color="neutral"
-                onClick={handleUrlSubmit}
-                disabled={!urlInput.trim()}
-                loading={busy}
-              >
-                Add Image
-              </Button>
+              <Pill onClick={handleUrlSubmit} disabled={!urlInput.trim()} loading={busy}>
+                Add image
+              </Pill>
             </View>
           </Tabs.Panel>
           {/* Panels mount only while active, so nothing is fetched until opened. */}

@@ -2,7 +2,9 @@
 
 import { FabricImage, type FabricObject } from 'fabric'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Divider, Text, Tooltip, View, useToast } from 'reshaped'
+import { Button, Divider, Text, View, useToast } from 'reshaped'
+
+import { Hint } from '@/design'
 
 import { AccountMenu } from './AccountMenu'
 import { AppMenu } from './AppMenu'
@@ -249,7 +251,7 @@ export function CanvasEditor() {
 
       <DockablePanel title="Tools" side="left" dock={toolsDock}>
         <View gap={2} align="center">
-          <Tooltip text="Select" position="end">
+          <Hint text="Select" position="end">
             {(attributes) => (
               <Button
                 size="small"
@@ -261,9 +263,9 @@ export function CanvasEditor() {
                 className={css.CircleButton}
               />
             )}
-          </Tooltip>
+          </Hint>
           <ImagePicker onImageSelect={onImageSelect} />
-          <Tooltip text="Add text" position="end">
+          <Hint text="Add text" position="end">
             {(attributes) => (
               <Button
                 size="small"
@@ -275,7 +277,7 @@ export function CanvasEditor() {
                 className={css.CircleButton}
               />
             )}
-          </Tooltip>
+          </Hint>
           <FontSelector
             editor={editor}
             disabled={!!activeItem && !isText(activeItem)}

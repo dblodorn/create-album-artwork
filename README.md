@@ -6,6 +6,7 @@ A web-based layout editor for designing album artwork, built for the SoundCloud 
 
 ## Features
 
+- **Look:** the dmbk visual language shared with chime, vz10m and Sanzo Wada: the FFF typeface, small pill buttons, italic tooltips, a monochrome palette and the shared app icon. **Light, Dark or System** appearance from the 🎨 menu, remembered per browser. The artwork itself never changes with the appearance.
 - **Workspace:** a full-window canvas with zoom (10–800%) and pan. Tools docks on the left and Layers on the right. Drag a panel's title bar to pull it out and float it anywhere, or drop it back on its edge to dock it. The arrangement is remembered per browser.
 - **Images:** upload, paste a URL, pick from **lora-trainer**'s public LoRA images (the picker's LoRA tab), or, for admins, pick from the **dmbk-photos** collection (the Photos tab, with keyword search and infinite scroll). Images are embedded in the scene, so they survive reloads.
 - **Rotate** a selected object by dragging just outside any corner, or with the handle above it.
@@ -82,6 +83,7 @@ A local run reads and writes **production** data in the dmbk API unless `DMBK_GR
 - **Publish to a public URI** on DigitalOcean Spaces (`dmbk-io` bucket), for attaching as SoundCloud artwork.
 - **Bring your own fal key**, so the allowlist isn't needed.
 - **Per-account photo collections:** once dmbk-photos records who owns each photo, the Photos tab shows each signed-in person their own photos, instead of being admin-only.
+- **Extract the visual language** (`design/`) for reuse in dmbk-photo and the other dmbk apps.
 - **Mobile audit and pass** ([#9](https://github.com/dblodorn/create-album-artwork/issues/9)), once the feature set settles.
 
 ## Docs

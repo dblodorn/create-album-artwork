@@ -1,6 +1,8 @@
 import type { FabricImage } from 'fabric'
 import { useEffect, useState } from 'react'
-import { Button, Checkbox, Loader, Modal, Radio, RadioGroup, Text, TextArea, View } from 'reshaped'
+import { Checkbox, Loader, Modal, Radio, RadioGroup, Text, TextArea, View } from 'reshaped'
+
+import { Pill } from '@/design'
 
 import { DEFAULT_MODEL, MAX_PROMPT_LENGTH, MODEL_OPTIONS, type ModelId } from '@/lib/fal/models'
 import { useBackgroundRemoval } from '@/lib/fal/useBackgroundRemoval'
@@ -136,22 +138,22 @@ export function BackgroundRemovalModal({
         </Checkbox>
 
         <View direction="row" gap={2} justify="end">
-          <Button onClick={close} variant="ghost">
+          <Pill onClick={close}>
             Cancel
-          </Button>
+          </Pill>
           {state.phase === 'preview' ? (
             <>
-              <Button onClick={reset} disabled={applying}>
+              <Pill onClick={reset} disabled={applying}>
                 Try again
-              </Button>
-              <Button color="primary" onClick={apply} loading={applying}>
+              </Pill>
+              <Pill color="primary" onClick={apply} loading={applying}>
                 Apply
-              </Button>
+              </Pill>
             </>
           ) : (
-            <Button color="primary" onClick={remove} disabled={working || !target}>
+            <Pill color="primary" onClick={remove} disabled={working || !target}>
               {state.phase === 'error' ? 'Try again' : 'Remove'}
-            </Button>
+            </Pill>
           )}
         </View>
       </View>

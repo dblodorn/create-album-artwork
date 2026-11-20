@@ -1,16 +1,15 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Reshaped } from "reshaped";
-import "reshaped/themes/slate/theme.css";
 
+import { ColorModeProvider } from "@/design";
 import { SessionProvider } from "@/lib/auth/client";
 
 const App = ({ children }: { children: ReactNode }) => {
   return (
-    <Reshaped theme="slate" defaultColorMode="dark">
+    <ColorModeProvider>
       <SessionProvider>{children}</SessionProvider>
-    </Reshaped>
+    </ColorModeProvider>
   );
 };
 
