@@ -161,6 +161,6 @@ The Layers row action is a small icon button. It must not start a drag (`onPoint
 
 ## Migration Plan
 
-1. Add `FAL_AI_API_KEY` and `FAL_ALLOWED_EMAILS=dain@db13.us` to the Vercel project (Production and Preview) and to `.env.local`. Document both in `.env.example`.
+1. Add `FAL_AI_API_KEY` and `FAL_ALLOWED_EMAILS=<owner's email>` to the Vercel project (Production and Preview) and to `.env.local`. Document both in `.env.example`.
 2. Deploy. With no key the action reads "not set up", and with no allowlist nobody can use it, so a partial env is safe.
 3. Rollback is a revert. No scene-format change: cutouts are ordinary image layers, and old code loads them fine.

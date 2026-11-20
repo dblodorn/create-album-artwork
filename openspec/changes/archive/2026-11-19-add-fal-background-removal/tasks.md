@@ -2,7 +2,7 @@
 
 ## 1. Prerequisites and risk check
 
-- [x] 1.1 Operator step (the user does this): create a fal API key at fal.ai/dashboard/keys. In the Vercel project `create-album-artwork`, add `FAL_AI_API_KEY` (Sensitive) and `FAL_ALLOWED_EMAILS=dain@db13.us` for Production and Preview, then add both to `.env.local` (or `vercel env pull .env.local`). Verify that `grep -c '^FAL_' .env.local` prints 2, without printing the values.
+- [x] 1.1 Operator step (the user does this): create a fal API key at fal.ai/dashboard/keys. In the Vercel project `create-album-artwork`, add `FAL_AI_API_KEY` (Sensitive) and `FAL_ALLOWED_EMAILS=<owner's email>` for Production and Preview, then add both to `.env.local` (or `vercel env pull .env.local`). Verify that `grep -c '^FAL_' .env.local` prints 2, without printing the values.
 - [x] 1.2 Confirm the branch `feat/fal-background-removal` is stacked on `feat/layers-panel` (PR #7), and that `openspec validate add-fal-background-removal --strict` passes. Verify with `git log --oneline -3`.
 - [x] 1.3 Add `@fal-ai/client@^1.11` with **npm**. Verify that `npm run typecheck` passes.
 - [x] 1.4 Spike the CORS risk (design Risks):
@@ -13,7 +13,7 @@
 
 ## 2. Server: fal access, models, tokens
 
-- [x] 2.1 Add `lib/fal/access.ts` (`server-only`) with `allowedEmails()` and `canUseBackgroundRemoval(viewer)` (design §1): trimmed, lowercased, empty means nobody, `isAdmin` ignored. Verify with `npm run typecheck`, and with a throwaway `tsx` check of: unset, an empty string, `" Dain@DB13.us , x@y.z"`, and an admin viewer not on the list.
+- [x] 2.1 Add `lib/fal/access.ts` (`server-only`) with `allowedEmails()` and `canUseBackgroundRemoval(viewer)` (design §1): trimmed, lowercased, empty means nobody, `isAdmin` ignored. Verify with `npm run typecheck`, and with a throwaway `tsx` check of: unset, an empty string, `" Owner@Example.com , x@y.z"`, and an admin viewer not on the list.
 - [x] 2.2 Add `lib/fal/client.ts` (`server-only`) with `resolveFalKey(viewer)` and `falFor(viewer)`, using `createFalClient({ credentials })` (design §2), and `lib/fal/models.ts`. The models file has the `rmbg-3` / `birefnet` / `pixelcut` table with endpoint, label, description, `supportsPrompt` and `toInput()`, plus a client-safe export of id, label, description and `supportsPrompt` only (design §3). Verify with `npm run typecheck`, and with `grep` that `models.ts`'s client export imports nothing server-only.
 - [x] 2.3 Add `lib/fal/jobToken.ts` (`server-only`): `signJob({ endpoint, requestId, viewerId })` → token with a 10-minute `exp`, and `verifyJob(token, viewerId)` → payload or null. Use HMAC-SHA256 keyed from the fal key, compared with `timingSafeEqual` (design §5). Verify with a throwaway `tsx` check that a fresh token verifies, and that each of these returns null: a tampered payload, a tampered signature, an expired token, and the wrong `viewerId`.
 - [x] 2.4 Add `lib/fal/image.ts` (`server-only`) with `sniffImageType(bytes)` (PNG/JPEG/WebP magic bytes, else null), `MAX_INPUT_BYTES = 4 * 1024 * 1024`, and `parseResultImage(data)`. The last returns `{ url, width, height }` only for an `https:` URL on a fal media host, else throws. Verify with a throwaway check against real file headers: a PNG, a JPEG, a WebP, a GIF (rejected) and a text file (rejected).
