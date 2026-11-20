@@ -4,6 +4,15 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-19 — Object controls move into the Layers panel
+
+- The Object panel is gone. Its actions now sit inline on the selected layer's row: a Transform button that opens Scale up / down (1 unit per click, Shift: 10%) and Rotate left / right (1° per click, Shift: 15°), with the current angle and a Reset, Remove background (on images) and Delete.
+- A new Effects button (the magic wand) opens Blur: a Gaussian-style blur for any layer (images, text, drawings, shapes) with an intensity slider from 0 to 50 and a Reset. It saves with the scene and shows in the PNG export.
+- After closing the Transform or Effects popout, keyboard shortcuts (⌘Z, arrows, Delete…) work right away, without clicking the canvas first.
+- The Layers panel is a little wider (240 px) to fit them.
+- Rotate on the canvas by dragging just outside any corner of the selection, as in Illustrator and Figma, with a rotate cursor.
+- The layer up/down buttons are gone. Drag rows, press Alt+↑/↓, ⌘] / ⌘[, or use the Edit menu to reorder.
+
 ## 2026-11-19 — Edit menu, undo and keyboard nudging
 
 - Undo and redo (⌘Z / ⇧⌘Z) for every change, with the step named in the Edit menu ("Undo Move").

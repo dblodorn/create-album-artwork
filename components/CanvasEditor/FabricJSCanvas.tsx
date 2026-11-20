@@ -2,12 +2,19 @@ import { useEffect, useRef } from 'react'
 import { Canvas, PencilBrush } from 'fabric'
 
 import { ARTBOARD, DEFAULT_BRUSH_WIDTH } from './lib/constants'
+import { installCornerRotation } from './lib/cornerRotation'
+import { installObjectBlur } from './lib/objectBlur'
 import { STROKE } from './lib/defaultShapes'
 import {
   type FabricJSEditor,
   type FabricJSEditorHook,
   useFabricJSEditor,
 } from './lib/useFabricJSEditor'
+
+// Before any object is created or restored, so every object gets the corner
+// rotation zones and serialises / renders blur.
+installCornerRotation()
+installObjectBlur()
 
 export interface Props {
   className?: string

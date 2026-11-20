@@ -19,8 +19,10 @@ import { Text } from 'reshaped'
 
 import css from './CanvasEditor.module.css'
 import { LayerRow } from './LayerRow'
+import { LayerActions } from './LayerActions'
 import { SHORTCUTS_OFF } from './lib/keyboard'
 import { setLayersPanelHovered } from './lib/layersHover'
+import type { RotateBy } from './lib/rotate'
 import type { Layer } from './lib/useCanvasLayers'
 
 const position = (index: number, total: number) => `position ${index + 1} of ${total}`
@@ -32,6 +34,10 @@ export function LayersPanel({
   onMove,
   onRemoveBackground,
   isDrawing,
+  onScale,
+  onRotate,
+  onBlur,
+  onDelete,
 }: {
   layers: Layer[]
   activeObject: FabricObject | null
@@ -40,6 +46,10 @@ export function LayersPanel({
   onMove: (object: FabricObject, index: number) => void
   onRemoveBackground: () => void
   isDrawing: boolean
+  onScale: (direction: 'up' | 'down', coarse: boolean) => void
+  onRotate: (by: RotateBy) => void
+  onBlur: (value: number, final: boolean) => void
+  onDelete: () => void
 }) {
   const hintId = useId()
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
@@ -146,55 +156,67 @@ export function LayersPanel({
     onPointerLeave: () => setLayersPanelHovered(false),
   }
 
-  if (!layers.length) {
-    return (
-      <div className={css.LayersEmpty} {...hover}>
-        <Text variant="caption-1" color="neutral-faded">
-          No layers yet
-        </Text>
-      </div>
-    )
-  }
-
   return (
     <div className={css.Layers} {...SHORTCUTS_OFF} {...hover}>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
-        accessibility={{ announcements }}
-        onDragEnd={onDragEnd}
-      >
-        <SortableContext
-          items={layers.map((layer) => layer.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <div
-            role="listbox"
-            aria-label="Layers, frontmost first"
-            className={css.LayerList}
-          >
-            {layers.map((layer, index) => (
-              <LayerRow
-                key={layer.id}
-                layer={layer}
-                selected={layer.id === activeId}
-                focusable={layer.id === tabStopId}
-                hintId={hintId}
-                rowRef={(node) => {
-                  if (node) rowRefs.current.set(layer.id, node)
-                  else rowRefs.current.delete(layer.id)
-                }}
-                onSelect={() => select(layer)}
-                onFocus={() => setFocusedId(layer.id)}
-                onKeyDown={(e) => onRowKeyDown(e, index)}
-                onRemoveBackground={onRemoveBackground}
-                isDrawing={isDrawing}
-              />
-            ))}
+      {/* The scroll container is also dnd-kit's drag boundary. */}
+      <div className={css.LayerScroll}>
+        {!layers.length ? (
+          <div className={css.LayersEmpty}>
+            <Text variant="caption-1" color="neutral-faded">
+              No layers yet
+            </Text>
           </div>
-        </SortableContext>
-      </DndContext>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+            accessibility={{ announcements }}
+            onDragEnd={onDragEnd}
+          >
+            <SortableContext
+              items={layers.map((layer) => layer.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div
+                role="listbox"
+                aria-label="Layers, frontmost first"
+                className={css.LayerList}
+              >
+                {layers.map((layer, index) => (
+                  <LayerRow
+                    key={layer.id}
+                    layer={layer}
+                    selected={layer.id === activeId}
+                    focusable={layer.id === tabStopId}
+                    hintId={hintId}
+                    rowRef={(node) => {
+                      if (node) rowRefs.current.set(layer.id, node)
+                      else rowRefs.current.delete(layer.id)
+                    }}
+                    onSelect={() => select(layer)}
+                    onFocus={() => setFocusedId(layer.id)}
+                    onKeyDown={(e) => onRowKeyDown(e, index)}
+                    actions={
+                      layer.id === activeId && (
+                        <LayerActions
+                          object={layer.object}
+                          isDrawing={isDrawing}
+                          onScale={onScale}
+                          onRotate={onRotate}
+                          onBlur={onBlur}
+                          onDelete={onDelete}
+                          onRemoveBackground={onRemoveBackground}
+                        />
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        )}
+      </div>
       <span id={hintId} className={css.VisuallyHidden}>
         Drag, or press Alt with the up or down arrow, to reorder.
       </span>

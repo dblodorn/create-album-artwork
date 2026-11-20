@@ -7,7 +7,6 @@ import { Button, Divider, Text, Tooltip, View, useToast } from 'reshaped'
 import { AccountMenu } from './AccountMenu'
 import { AppMenu } from './AppMenu'
 import { BackgroundRemovalModal } from './BackgroundRemovalModal'
-import { ActiveItemControls } from './ActiveItemControls'
 import css from './CanvasEditor.module.css'
 import { ColorEditor } from './ColorEditor'
 import { DrawingControls } from './DrawingControls'
@@ -81,10 +80,10 @@ export function CanvasEditor() {
 
   const {
     activeItem,
-    moveItemUp,
-    moveItemDown,
     deleteSelected,
     scaleActiveItemUpDown,
+    rotateActiveItem,
+    setActiveItemBlur,
     handleDeselectActiveObject,
   } = useEditorItems(editor)
 
@@ -293,25 +292,9 @@ export function CanvasEditor() {
       </FloatingPanel>
 
       <FloatingPanel
-        id="object"
-        title="Object"
-        defaultPosition={({ width }) => ({ x: window.innerWidth - width - 16, y: 64 })}
-      >
-        <ActiveItemControls
-          activeItem={activeItem}
-          moveItemUp={moveItemUp}
-          moveItemDown={moveItemDown}
-          deleteSelected={deleteSelected}
-          scaleActiveItemUpDown={scaleActiveItemUpDown}
-          isDrawing={isDrawing}
-          onRemoveBackground={openRemoveBackground}
-        />
-      </FloatingPanel>
-
-      <FloatingPanel
         id="layers"
         title="Layers"
-        defaultPosition={({ width }) => ({ x: window.innerWidth - width - 16, y: 136 })}
+        defaultPosition={({ width }) => ({ x: window.innerWidth - width - 16, y: 64 })}
       >
         <LayersPanel
           layers={layers.layers}
@@ -320,6 +303,14 @@ export function CanvasEditor() {
           onMove={layers.moveTo}
           onRemoveBackground={openRemoveBackground}
           isDrawing={isDrawing}
+          onScale={scaleActiveItemUpDown}
+          onRotate={rotateActiveItem}
+          onBlur={(value, final) => {
+            // Arrow keys on the slider commit per press; merge quick runs into one step.
+            if (final) history.markMerge('blur')
+            setActiveItemBlur(value, final)
+          }}
+          onDelete={deleteSelected}
         />
       </FloatingPanel>
 
