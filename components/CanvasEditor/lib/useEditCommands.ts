@@ -112,17 +112,17 @@ export function useEditCommands({
     ])
   ) as Record<MenuCommandId, EditCommand>
 
-  const { markNudge } = history
+  const { markMerge } = history
   const nudge = useCallback(
     (dx: number, dy: number) => {
       const target = canvas?.getActiveObject()
       if (!editor || !target) return
       target.set({ left: target.left + dx, top: target.top + dy })
       target.setCoords()
-      markNudge()
+      markMerge('nudge')
       editor.commit('Move')
     },
-    [canvas, editor, markNudge]
+    [canvas, editor, markMerge]
   )
 
   return { commands, nudge, platform }

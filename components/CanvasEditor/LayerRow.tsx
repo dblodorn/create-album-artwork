@@ -1,10 +1,9 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { KeyboardEvent } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
 import css from './CanvasEditor.module.css'
 import type { Layer } from './lib/useCanvasLayers'
-import { RemoveBackgroundButton } from './RemoveBackgroundButton'
 
 export function LayerRow({
   layer,
@@ -15,8 +14,7 @@ export function LayerRow({
   onSelect,
   onFocus,
   onKeyDown,
-  onRemoveBackground,
-  isDrawing,
+  actions,
 }: {
   layer: Layer
   selected: boolean
@@ -26,8 +24,8 @@ export function LayerRow({
   onSelect: () => void
   onFocus: () => void
   onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => void
-  onRemoveBackground: () => void
-  isDrawing: boolean
+  // Inline actions, rendered only on the selected row.
+  actions?: ReactNode
 }) {
   // Pointer and touch dragging only; the panel handles keys itself. dnd-kit's
   // `attributes` (button role, its own keyboard instructions) are left off.
@@ -60,17 +58,7 @@ export function LayerRow({
       <span className={css.LayerLabel} title={layer.label}>
         {layer.label}
       </span>
-      {selected && layer.kind === 'image' && (
-        <span className={css.LayerAction}>
-          <RemoveBackgroundButton
-            activeItem={layer.object}
-            isDrawing={isDrawing}
-            onOpen={onRemoveBackground}
-            variant="ghost"
-            tooltipPosition="start"
-          />
-        </span>
-      )}
+      {actions && <span className={css.LayerAction}>{actions}</span>}
     </div>
   )
 }

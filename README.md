@@ -6,10 +6,11 @@ A web-based layout editor for designing album artwork, built for the SoundCloud 
 
 ## Features
 
-- **Workspace:** a full-window canvas with zoom (10–800%) and pan, plus floating, movable Tools, Object and Layers panels. Panel positions are remembered per browser.
+- **Workspace:** a full-window canvas with zoom (10–800%) and pan, plus floating, movable Tools and Layers panels. Panel positions are remembered per browser.
 - **Images:** upload, paste a URL, or pick from **lora-trainer**'s public LoRA images (the picker's LoRA tab). Images are embedded in the scene, so they survive reloads.
+- **Rotate** a selected object by dragging just outside any corner, or with the handle above it.
 - **Text** in 51 Google Fonts, **freehand drawing** with five brush styles and adjustable weight, and stroke and background colours.
-- **Layers panel:** every object, front to back, with thumbnails. Click a row to select, even objects hidden under others. Drag rows or press Alt+↑/↓ to reorder.
+- **Layers panel:** every object, front to back, with thumbnails. Click a row to select, even objects hidden under others. Drag rows or press Alt+↑/↓ to reorder. The selected row has inline actions: a Transform popout (scale up / down by 1 unit, rotate 1° left / right, reset rotation; hold Shift for 10% and 15° steps), an Effects popout with **Blur** for any layer, Remove background on images, and Delete.
 - **Background removal** on an image layer through fal.ai:
   - Bria RMBG 3.0, with an optional "what to keep" prompt to isolate one object;
   - BiRefNet v2;

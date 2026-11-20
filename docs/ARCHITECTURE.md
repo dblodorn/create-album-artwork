@@ -30,7 +30,7 @@ FileMenu ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(3) → 3000×3
 - Everything is client-side except two routes: `/api/dmbk` (§1a) and `/api/session` (§1b). There is **no server state and no DB**; accounts live in the dmbk GraphQL API.
 - The canvas works in fixed 1000×1000 logical units and is only CSS-scaled to its square parent (max-width 700px wrapper). Export multiplies by 3 → a 3000×3000 PNG regardless of viewport.
 - Uploaded images are downscaled to ≤2048px and embedded as data URLs, so the scene (and exported JSON) is self-contained.
-- `preserveObjectStacking = true` — z-order only changes via explicit layer controls: the Layers panel (drag, Alt+↑/↓), the Arrange shortcuts/Edit menu (⌘] ⌘[ ⇧⌘] ⇧⌘[) and the Object panel buttons.
+- `preserveObjectStacking = true` — z-order only changes via explicit layer controls: the Layers panel (drag, Alt+↑/↓) and the Arrange shortcuts/Edit menu (⌘] ⌘[ ⇧⌘] ⇧⌘[). The Layers panel has no arrange buttons.
 
 ## 1d. Undo, clipboard and the Edit menu
 
@@ -52,6 +52,7 @@ useEditCommands ─▶ commands[id] = { label, shortcut, enabled (commandState),
 
 ## 1c. Layers panel
 
+- **Inline actions** (`LayerActions`): the selected row (single selection only) shows a Transform popout (scale: the longer side ±1 unit, or ×1.1/×0.9 with Shift; rotate: ±1° about the centre, or ±15° with Shift, reset to 0°, with the current angle — `rotateActiveItem` → `commit('Rotate')`), an Effects popout (Blur, §1f), Remove background on images, and Delete. They replace the old Object panel; there are no arrange buttons. The slot stops pointer and key events from reaching the row (so no drag, re-select or row key handling), except Escape, so the popout can close. The popout renders in a portal, so its content carries `data-editor-shortcuts="off"` itself. When a popout closes, Reshaped returns focus to its trigger, which is inside the shortcuts-off panel; `onAfterClose` blurs the trigger (marked `data-layer-popout-trigger`) if focus is still on it, so ⌘Z and the other canvas shortcuts work straight away. All actions are disabled while drawing. The list scrolls in `.LayerScroll`, which is also dnd-kit's drag boundary.
 - **Source of truth is `canvas.getObjects()`.** `useCanvasLayers` keeps no copy: on any change it schedules one `requestAnimationFrame` rebuild that reverses the object list (front first) and derives each row's label (`layerLabel`) and kind. A scene load fires one remove/add per object, and the batch turns that into a single rebuild.
 - **Fabric fires nothing for z-order changes** (`moveObjectTo`, `bringObjectToFront`… only re-render). So the editor exposes `subscribe()`, which `commit()` notifies, and every z-order or property change that already calls `commit()` reaches the panel. The hook also listens to `object:added/removed/modified`, `text:changed` and the selection events.
 - **Row ids are session-only** (`layerIds.ts`, a `WeakMap`), so nothing is added to the scene and the save format is unchanged.
@@ -105,6 +106,22 @@ AccountMenu (top bar, right)        components/CanvasEditor/AccountMenu.tsx
 - **Gating rule.** `useViewer()` in the browser only decides what UI to show. Anything that protects a feature checks on the server with `viewerFromRequest()` (fails closed to `null`) or `requireViewer({ admin? })` (viewer, or a ready 401/403 `Response`) from `lib/auth/viewer.ts`. Nothing is gated yet; every feature works signed out.
 - **Origins.** The shared OAuth client renders the Google button only on its authorized JavaScript origins: `https://sleeve.dmbk.io`, `https://create-album-artwork.vercel.app`, `http://localhost:3000`. **Vercel preview URLs can't sign in.**
 - **Local API.** Sessions are signed by the API's secret, so a session minted by a local API is anonymous on production (the app signs you out on the next load). Sign in again after switching `DMBK_GRAPHQL_API_URL`.
+
+
+## 1e. Rotating on the canvas
+
+Selected objects can be rotated from Fabric's top handle (`mtr`) or by dragging just outside any corner. `lib/cornerRotation.ts` adds four invisible controls (`rotTL/TR/BL/BR`), offset outward beyond the corner scale handles. They use Fabric's `rotationWithSnapping` and a curved-arrow `cursorStyle`. They're installed by wrapping the static `createControls` of `InteractiveFabricObject` and `Textbox` at module load, so new and restored objects get them. History labels these drags "Rotate" from `object:modified`'s `action`.
+
+
+## 1f. Blur (Effects popout)
+
+Every object has a custom `blurAmount` (artboard units, 0–50). `lib/objectBlur.ts` adds it to `BaseFabricObject.customProperties` and sets a 0 default on the prototype, so it serialises with the scene, undo snapshots and JSON, including "no blur". It isn't named `blur`, because Fabric's text classes already have a `blur()` method.
+
+Rendering wraps the base `render` (text, images, paths and shapes all reach it). When `blurAmount > 0` it sets `ctx.filter = blur(blurAmount × hypot(a, b) px)` from the context transform at entry. That transform is zoom × backing scale on screen and the multiplier during `toCanvasElement`, so the blur keeps its artboard size at any zoom and in the 3000 px export. The filter applies as the object's cache bitmap is drawn, so it spreads past the object's edges. Selection controls are on the top canvas and stay sharp.
+
+`canvasBlurSupported()` feature-detects `ctx.filter`. Without it, objects render sharp, the values are kept, and the popout disables the slider with a note.
+
+The slider calls `setActiveItemBlur(value, false)` live (render only) and `(value, true)` on release, which runs `commit('Blur')`. `CanvasEditor` tags those commits with `history.markMerge('blur')`, so a run of arrow-key steps within 1 s is one undo step, the way nudges are.
 
 ## 2. v0 gaps for the album-artwork use-case
 

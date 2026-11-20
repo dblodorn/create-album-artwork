@@ -34,8 +34,8 @@ export type History = {
   reset: () => void
   /** Runs `fn` and records everything it changes as one step named `label`. */
   transaction: (label: string, fn: () => unknown) => Promise<void>
-  /** Marks the next commit as a nudge, so quick runs merge into one step. */
-  markNudge: () => void
+  /** Tags the next commit, so quick runs with the same key merge into one step (nudges, blur). */
+  markMerge: (key: string) => void
 }
 
 type Controls = Omit<History, 'canUndo' | 'canRedo' | 'undoLabel' | 'redoLabel'> & {
@@ -164,8 +164,8 @@ export function useHistory(editor: FabricJSEditor | undefined): History {
           }
         }
       },
-      markNudge: () => {
-        mergeKey = 'nudge'
+      markMerge: (key: string) => {
+        mergeKey = key
       },
     }
     bump()
@@ -192,7 +192,7 @@ export function useHistory(editor: FabricJSEditor | undefined): History {
     },
     []
   )
-  const markNudge = useCallback(() => controls.current?.markNudge() ?? noop(), [])
+  const markMerge = useCallback((key: string) => controls.current?.markMerge(key) ?? noop(), [])
 
   const stack = controls.current?.stack
   return {
@@ -204,6 +204,6 @@ export function useHistory(editor: FabricJSEditor | undefined): History {
     redo,
     reset,
     transaction,
-    markNudge,
+    markMerge,
   }
 }
