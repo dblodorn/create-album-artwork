@@ -1,4 +1,6 @@
-import { Button, Tooltip, View } from 'reshaped'
+import { Button, View } from 'reshaped'
+
+import { Hint } from '@/design'
 
 import type { Viewport } from './lib/useViewport'
 
@@ -11,7 +13,7 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
 
   return (
     <View direction="row" gap={1} align="center">
-      <Tooltip text={`Zoom out (${mod}−)`} position="bottom">
+      <Hint text={`Zoom out (${mod}−)`} position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -23,8 +25,8 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
             −
           </Button>
         )}
-      </Tooltip>
-      <Tooltip text={`Actual size (${mod}1)`} position="bottom">
+      </Hint>
+      <Hint text={`Actual size (${mod}1)`} position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -36,8 +38,8 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
             {`${Math.round(zoom * 100)}%`}
           </Button>
         )}
-      </Tooltip>
-      <Tooltip text={`Zoom in (${mod}+)`} position="bottom">
+      </Hint>
+      <Hint text={`Zoom in (${mod}+)`} position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -49,8 +51,8 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
             +
           </Button>
         )}
-      </Tooltip>
-      <Tooltip text={`Fit to screen (${mod}0)`} position="bottom">
+      </Hint>
+      <Hint text={`Fit to screen (${mod}0)`} position="bottom">
         {(attributes) => (
           <Button
             size="small"
@@ -62,7 +64,7 @@ export function ZoomControls({ viewport }: { viewport: Viewport }) {
             Fit
           </Button>
         )}
-      </Tooltip>
+      </Hint>
     </View>
   )
 }

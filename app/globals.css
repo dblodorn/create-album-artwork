@@ -12,9 +12,9 @@ body {
   overscroll-behavior: none;
 }
 
+/* The font family comes from the `dmbk` theme (FFF, see design/). */
 body {
   min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

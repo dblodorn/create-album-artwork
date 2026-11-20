@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Button, Loader, Modal, Text, View } from 'reshaped'
+import { Loader, Modal, Text, View } from 'reshaped'
+
+import { Pill } from '@/design'
 
 import type { ChangelogEntry } from '@/lib/changelog'
 
@@ -28,9 +30,9 @@ export function ChangelogModal({ active, onClose }: { active: boolean; onClose: 
       <View gap={4}>
         <View direction="row" justify="space-between" align="center">
           <Modal.Title>Changelog</Modal.Title>
-          <Button size="small" variant="ghost" onClick={onClose}>
+          <Pill onClick={onClose}>
             Close
-          </Button>
+          </Pill>
         </View>
         <div className={css.Changelog}>
           {failed && <Text color="critical">Couldn't load the changelog.</Text>}

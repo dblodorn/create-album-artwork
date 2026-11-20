@@ -1,5 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { Button, Loader, Text, View, useToast } from 'reshaped'
+import { Loader, Text, View, useToast } from 'reshaped'
+
+import { Pill } from '@/design'
 
 import css from './CanvasEditor.module.css'
 import { urlToDataURL } from './lib'
@@ -166,9 +168,9 @@ function LoraImages({
   return (
     <View gap={4}>
       <div className={css.LoraHeader}>
-        <Button size="small" variant="ghost" onClick={onBack}>
+        <Pill onClick={onBack}>
           ← Back
-        </Button>
+        </Pill>
         <Text variant="body-2" weight="bold" maxLines={1}>
           {lora.triggerWord}
         </Text>
@@ -235,9 +237,7 @@ function ConnectionFooter({
             ? "The LoRA library isn't set up on this deployment."
             : "Couldn't reach the LoRA library."}
         </Text>
-        <Button size="small" onClick={retry}>
-          Retry
-        </Button>
+        <Pill onClick={retry}>Retry</Pill>
       </View>
     )
   }
@@ -256,9 +256,7 @@ function ConnectionFooter({
 
   return (
     <View align="center" paddingBottom={2}>
-      <Button size="small" onClick={loadMore}>
-        Load more
-      </Button>
+      <Pill onClick={loadMore}>Load more</Pill>
     </View>
   )
 }

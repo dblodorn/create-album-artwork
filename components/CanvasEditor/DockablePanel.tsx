@@ -1,6 +1,8 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { Text } from 'reshaped'
 
+import { Hint } from '@/design'
+
 import css from './CanvasEditor.module.css'
 import { type DockSide, type Point, clampPosition, inDropZone, shouldUndock } from './lib/panelDock'
 import type { PanelDock } from './lib/usePanelDock'
@@ -42,6 +44,8 @@ export function DockablePanel({
   const dragRef = useRef<Drag | null>(null)
   const [zIndex, setZIndex] = useState(topZIndex)
   const [inZone, setInZone] = useState(false)
+  // Hides the handle's hint while dragging; it would stay where the panel was.
+  const [dragging, setDragging] = useState(false)
   const { docked, x, y, ready, setWidth, undock, dock: dockPanel, move } = dock
 
   const measure = () => {
@@ -79,6 +83,7 @@ export function DockablePanel({
     const rect = panelRef.current?.getBoundingClientRect()
     if (e.button !== 0 || !rect) return
     e.currentTarget.setPointerCapture(e.pointerId)
+    setDragging(true)
     dragRef.current = {
       pointer: { x: e.clientX, y: e.clientY },
       offset: { x: e.clientX - rect.left, y: e.clientY - rect.top },
@@ -115,6 +120,7 @@ export function DockablePanel({
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current
     dragRef.current = null
+    setDragging(false)
     setInZone(false)
     if (!drag || drag.mode === 'pending') return
     if (inDropZone(side, e.clientX, window.innerWidth)) dockPanel()
@@ -144,19 +150,27 @@ export function DockablePanel({
         role="group"
         aria-label={title}
       >
-        <div
-          className={css.PanelHeader}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          title={docked ? 'Drag to pull out' : 'Drag to move; drop on the edge to dock'}
+        <Hint
+          text={docked ? 'Drag to pull out' : 'Drag to move; drop on the edge to dock'}
+          position="bottom"
+          disabled={dragging}
         >
-          <span className={css.PanelGrip} aria-hidden />
-          <Text variant="caption-2" color="neutral-faded" weight="medium">
-            {title}
-          </Text>
-        </div>
+          {(attributes) => (
+            <div
+              {...attributes}
+              className={css.PanelHeader}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+            >
+              <span className={css.PanelGrip} aria-hidden />
+              <Text variant="caption-2" color="neutral-faded" weight="medium">
+                {title}
+              </Text>
+            </div>
+          )}
+        </Hint>
         <div className={css.PanelBody}>{children}</div>
       </div>
     </>

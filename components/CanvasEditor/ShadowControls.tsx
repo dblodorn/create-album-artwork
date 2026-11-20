@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { FabricObject } from 'fabric'
 import { Shadow } from 'fabric'
-import { Button, Popover, Slider, Text, Tooltip, View } from 'reshaped'
+import { Button, Popover, Slider, Text, View } from 'reshaped'
+
+import { Hint } from '@/design'
 
 import css from './CanvasEditor.module.css'
 import { Shadow as ShadowIcon } from './icons'
@@ -58,11 +60,12 @@ export function ShadowControls({
       direction="row"
     >
       <View gap={2} direction="row">
-        <Tooltip text="Shadow color" position="top">
+        <Hint text="Shadow color" position="top">
           {(attributes) => (
             <Button
               size="small"
               color="neutral"
+              rounded
               className={css.ColorInput}
               attributes={attributes}
             >
@@ -73,7 +76,7 @@ export function ShadowControls({
               />
             </Button>
           )}
-        </Tooltip>
+        </Hint>
 
         <Popover triggerType="hover" position="top">
           <Popover.Trigger>

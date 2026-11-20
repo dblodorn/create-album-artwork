@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "theme": "reshaped theming --config design/reshaped.config.mjs --output design/themes",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -25,6 +26,7 @@
     "reshaped": "^4.1.0"
   },
   "devDependencies": {
+    "@reshaped/theming": "^4.1.0",
     "@types/node": "^24.19.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",

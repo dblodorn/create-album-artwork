@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Loader, Text, TextField, View, useToast } from 'reshaped'
+import { Loader, Text, TextField, View, useToast } from 'reshaped'
+
+import { Pill } from '@/design'
 
 import css from './CanvasEditor.module.css'
 import { urlToDataURL } from './lib'
@@ -180,9 +182,7 @@ function PhotosFooter({
             ? "The photo library isn't set up on this deployment."
             : "Couldn't reach the photo library."}
         </Text>
-        <Button size="small" onClick={retry}>
-          Retry
-        </Button>
+        <Pill onClick={retry}>Retry</Pill>
       </View>
     )
   }

@@ -1,0 +1,56 @@
+/*
+ * The few tokens the `dmbk` Reshaped theme has no slot for, plus the two
+ * classes the visual language owns (Pill, Hint). Everything else comes from
+ * the theme's --rs-* tokens.
+ */
+
+:root {
+  /* Pill buttons: Sanzo Wada's button, sized for an application (~30px there). */
+  --dmbk-pill-height: 24px;
+  --dmbk-pill-tracking: 0.06em;
+
+  /*
+   * Overlays on images (badges, busy states). They sit on photographs, not on
+   * the chrome, so they stay dark with white text in both colour modes.
+   */
+  --dmbk-overlay: rgba(0, 0, 0, 0.6);
+  --dmbk-overlay-faded: rgba(0, 0, 0, 0.45);
+  --dmbk-on-overlay: #fff;
+
+  /* The transparency checkerboard behind thumbnails: mid-grey in both modes. */
+  --dmbk-checker-a: #8c8c8c;
+  --dmbk-checker-b: #6e6e6e;
+}
+
+/*
+ * The workspace a document (the artboard) sits on, and the lift under it.
+ * Light: a faded grey, so a white document stands out. Dark: the page colour.
+ */
+[data-rs-color-mode='light'] {
+  --dmbk-workspace: var(--rs-color-background-neutral-faded);
+  --dmbk-document-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+}
+[data-rs-color-mode='dark'] {
+  --dmbk-workspace: var(--rs-color-background-page);
+  --dmbk-document-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+/*
+ * Pill: uppercase, slightly tracked, fully rounded (via Reshaped's `rounded`).
+ * Overrides the small Button's own variables (28px: 20px line + 2×4px) to make
+ * it --dmbk-pill-height: Sanzo Wada's micro type at caption size, uppercase.
+ * The doubled class outranks Reshaped's `.--size-small` regardless of order.
+ */
+.dmbk-pill.dmbk-pill {
+  --rs-button-font-size: var(--rs-font-size-caption-1);
+  --rs-button-line-height: calc(var(--dmbk-pill-height) - 2 * var(--rs-unit-x1));
+  --rs-button-letter-spacing: var(--dmbk-pill-tracking);
+  --rs-button-p-v: var(--rs-unit-x1);
+  --rs-button-p-h: var(--rs-unit-x3);
+  text-transform: uppercase;
+}
+
+/* Hint: tooltip text in FFF Italic. */
+.dmbk-hint {
+  font-style: italic;
+}

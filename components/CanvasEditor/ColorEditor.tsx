@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react'
-import { Button, Tooltip, View } from 'reshaped'
+import { Button, View } from 'reshaped'
+
+import { Hint } from '@/design'
 
 import css from './CanvasEditor.module.css'
 import type { FabricJSEditor } from './lib'
@@ -36,11 +38,12 @@ export function ColorEditor({
 
   return (
     <View gap={2}>
-      <Tooltip text="Color" position="end">
+      <Hint text="Color" position="end">
         {(attributes) => (
           <Button
             size="small"
             color="neutral"
+            rounded
             className={css.ColorInput}
             attributes={attributes}
           >
@@ -51,12 +54,13 @@ export function ColorEditor({
             />
           </Button>
         )}
-      </Tooltip>
-      <Tooltip text="Background" position="end">
+      </Hint>
+      <Hint text="Background" position="end">
         {(attributes) => (
           <Button
             size="small"
             color="neutral"
+            rounded
             className={css.ColorInput}
             attributes={attributes}
           >
@@ -67,7 +71,7 @@ export function ColorEditor({
             />
           </Button>
         )}
-      </Tooltip>
+      </Hint>
     </View>
   )
 }

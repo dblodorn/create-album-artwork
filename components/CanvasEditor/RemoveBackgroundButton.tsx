@@ -1,6 +1,8 @@
 import type { FabricObject } from 'fabric'
 import type { SyntheticEvent } from 'react'
-import { Button, Tooltip } from 'reshaped'
+import { Button } from 'reshaped'
+
+import { Hint } from '@/design'
 
 import { useViewer } from '@/lib/auth/client'
 
@@ -46,7 +48,7 @@ export function RemoveBackgroundButton({
   const gate = useRemoveBackgroundGate(activeItem, isDrawing)
 
   return (
-    <Tooltip text={gate.label} position={tooltipPosition}>
+    <Hint text={gate.label} position={tooltipPosition}>
       {(attributes) => (
         // The wrapper carries the tooltip so it still shows while disabled.
         <span
@@ -71,6 +73,6 @@ export function RemoveBackgroundButton({
           />
         </span>
       )}
-    </Tooltip>
+    </Hint>
   )
 }

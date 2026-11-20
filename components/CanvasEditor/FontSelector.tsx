@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react'
-import { Button, Modal, Tooltip, View } from 'reshaped'
+import { Button, Modal, View } from 'reshaped'
+
+import { Hint } from '@/design'
 
 import { fonts } from '@/lib/googleFonts'
 
@@ -28,7 +30,7 @@ export function FontSelector({
 
   return (
     <>
-      <Tooltip text="Fonts" position="end">
+      <Hint text="Fonts" position="end">
         {(attributes) => (
           <Button
             size="small"
@@ -41,7 +43,7 @@ export function FontSelector({
             className={css.CircleButton}
           />
         )}
-      </Tooltip>
+      </Hint>
       <Modal
         active={showFontSelector}
         onClose={() => setShowFontSelector(false)}
