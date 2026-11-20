@@ -16,10 +16,15 @@ type Operation = {
   query: string
   // Returns the variables to forward, or null when they're invalid.
   parseVariables: (raw: unknown) => Variables | null
+  // Who may run it. 'admin' is checked by `/api/dmbk` before the API is
+  // called, even when the API itself would answer anyone. Default: public.
+  access?: 'public' | 'admin'
 }
 
 const MAX_CURSOR_LENGTH = 512
 const MAX_ID_LENGTH = 256
+const MAX_KEYWORDS = 10
+const MAX_KEYWORD_LENGTH = 64
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -30,6 +35,21 @@ const isIntInRange = (value: unknown, min: number, max: number): value is number
 const isOptionalCursor = (value: unknown): value is string | undefined | null =>
   value == null ||
   (typeof value === 'string' && value.length > 0 && value.length <= MAX_CURSOR_LENGTH)
+
+// Optional keyword list: trimmed, each 1–64 characters, at most 10. Empty
+// means no filter (null). Case is left to the API, which normalises it.
+const parseKeywords = (value: unknown): string[] | null | undefined => {
+  if (value == null) return null
+  if (!Array.isArray(value) || value.length > MAX_KEYWORDS) return undefined
+  const keywords: string[] = []
+  for (const k of value) {
+    if (typeof k !== 'string') return undefined
+    const trimmed = k.trim()
+    if (!trimmed || trimmed.length > MAX_KEYWORD_LENGTH) return undefined
+    keywords.push(trimmed)
+  }
+  return keywords.length ? keywords : null
+}
 
 const IMAGE_FIELDS = 'id url prompt width height createdAt'
 
@@ -79,6 +99,25 @@ const OPERATIONS: Record<string, Operation> = {
       }
       if (!isIntInRange(first, 1, 48) || !isOptionalCursor(after)) return null
       return { id, first, after: after ?? null }
+    },
+  },
+  // The owner's dmbk-photos collection, hidden photos included. Admin only:
+  // photos aren't tied to an account yet, so there's no "your photos" scope.
+  DmbkPhotos: {
+    access: 'admin',
+    query: `query DmbkPhotos($first: Int!, $after: String, $keywords: [String!]) {
+  dmbkPhotos(first: $first, after: $after, keywords: $keywords, visibility: ANY) {
+    edges { cursor node { id title hidden width height thumbUrl displayUrl } }
+    pageInfo { hasNextPage endCursor }
+  }
+}`,
+    parseVariables(raw) {
+      if (!isObject(raw)) return null
+      const { first, after, keywords: rawKeywords } = raw
+      if (!isIntInRange(first, 1, 48) || !isOptionalCursor(after)) return null
+      const keywords = parseKeywords(rawKeywords)
+      if (keywords === undefined) return null
+      return { first, after: after ?? null, keywords }
     },
   },
 }
