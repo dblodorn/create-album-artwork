@@ -50,6 +50,22 @@ useEditCommands ─▶ commands[id] = { label, shortcut, enabled (commandState),
 - The clipboard (`clipboard.ts`) stores detached clones at absolute positions; each paste clones again. Paste centres on the visible artboard (from `useViewport`); in Front/Back insert next to the selected object; in Place keeps positions.
 - Pure pieces (`HistoryStack`, snapshots, `Clipboard`, `matchShortcut`, `commandState`, `parseChangelog`) are unit-tested with Vitest on a stubbed Fabric canvas (`test/canvasStub.ts`).
 
+## 1b2. Side panels and docking
+
+Tools and Layers are `DockablePanel`s laid out around the workspace: `.Main` is a row of left dock spacer, `Workspace` (`flex: 1`) and right dock spacer.
+- **Docked:** the panel is `position: fixed`, pinned to its edge below the top bar. Its spacer takes the panel's measured width (`ResizeObserver`), so the workspace really is the free area, and fitting needs no special cases.
+- **Floating:** the spacer collapses to 0 and the panel sits at its stored `x, y`, above docked panels (z-index 10+ vs 5).
+
+The panel element never changes parent, so docking doesn't remount the Layers list, its selection or its popovers.
+
+**Drag:** the title bar has one pointer-capture drag. From docked, nothing happens until the pointer moves more than 4 px (`shouldUndock`), so a click is a no-op. After that the panel floats at its current screen spot and follows the pointer. While floating, `inDropZone` (within 48 px of the panel's own edge) shows `.DockDropZone`. Release decides from the release point, so a quick flick docks. Docking and undocking persist straight away, and moves persist on release.
+
+**Storage:** state is `{ docked, x, y }` in `localStorage["canvas-editor-panel:<id>"]`, read by `readPanelState`. Missing, invalid and pre-docking `{ x, y }` entries are docked. Blocked storage means docked panels that still work for the visit.
+
+**Viewport:** `useViewport` refits on resize while fitted. Otherwise `panAfterResize` runs:
+- **The window kept its size** (a dock change): it keeps the artboard still on screen by offsetting pan by how far the workspace's left edge moved.
+- **The window resized:** it keeps the centre centred.
+
 ## 1c. Layers panel
 
 - **Inline actions** (`LayerActions`): the selected row (single selection only) shows a Transform popout (scale: the longer side ±1 unit, or ×1.1/×0.9 with Shift; rotate: ±1° about the centre, or ±15° with Shift, reset to 0°, with the current angle — `rotateActiveItem` → `commit('Rotate')`), an Effects popout (Blur, §1f), Remove background on images, and Delete. They replace the old Object panel; there are no arrange buttons. The slot stops pointer and key events from reaching the row (so no drag, re-select or row key handling), except Escape, so the popout can close. The popout renders in a portal, so its content carries `data-editor-shortcuts="off"` itself. When a popout closes, Reshaped returns focus to its trigger, which is inside the shortcuts-off panel; `onAfterClose` blurs the trigger (marked `data-layer-popout-trigger`) if focus is still on it, so ⌘Z and the other canvas shortcuts work straight away. All actions are disabled while drawing. The list scrolls in `.LayerScroll`, which is also dnd-kit's drag boundary.

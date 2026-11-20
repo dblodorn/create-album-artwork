@@ -48,9 +48,9 @@ app/
   api/background-removal/route.ts     # POST multipart { image, model, prompt? } → { job } (fal storage + queue submit)
   api/background-removal/job/route.ts # POST { job } → status | done + image; DELETE { job } cancel
 components/CanvasEditor/
-  CanvasEditor.tsx    # Orchestrator: full-window layout — top bar, Workspace, floating panels
+  CanvasEditor.tsx    # Orchestrator: full-window layout — top bar, then left dock spacer | Workspace | right dock spacer, plus the side panels
   Workspace.tsx       # zoom/pan viewport hosting the canvas (wheel, Space/middle drag, ⌘ shortcuts)
-  FloatingPanel.tsx   # draggable pane; position persisted in localStorage per id
+  DockablePanel.tsx   # side panel: docked at its edge (fixed, spacer reserves room) or floating; drag title bar to pull out, drop on its edge to dock
   ZoomControls.tsx    # top-bar zoom −/%/+/Fit
   AppMenu.tsx         # top bar, left: 🎨 menu → Changelog… (ChangelogModal) | View on GitHub
   FileMenu.tsx        # File menu: Download PNG, Save JSON, Load JSON… (resets history), Clear canvas
@@ -90,7 +90,9 @@ components/CanvasEditor/
     useImageUpload.tsx     # blobToDataURL (≤2048px data URL), urlToDataURL (CORS fetch → same), upload hook
     uploadCanvas.ts        # getCanvasBlob, download*, IndexedDB saveScene/loadScene, restoreScene
     constants.ts           # ARTBOARD (1000), EXPORT_SIZE (3000), zoom limits, defaults
-    useViewport.ts         # zoom/pan state; starts fitted, refits on resize until user zooms/pans
+    useViewport.ts         # zoom/pan state; starts fitted, refits on resize until user zooms/pans; then panAfterResize keeps the artboard still on dock changes
+    panelDock.ts           # pure: readPanelState (old {x,y} → docked), shouldUndock (4 px), inDropZone (48 px, own edge), clampPosition, panAfterResize
+    usePanelDock.ts        # one panel's { docked, x, y, width } + undock/dock/move, persisted per id
     canvasDisplay.ts       # setCanvasDisplaySize: backing store + Fabric zoom for on-screen size
     keyboard.ts            # shouldIgnoreShortcut (canvas text editing / form fields / data-editor-shortcuts="off")
     objectTypes.ts         # isText/isImage/isPath (instanceof checks)
@@ -122,7 +124,7 @@ lib/
 ## Key patterns
 
 - **Artboard**: scene coordinates are always 1000×1000 units (`ARTBOARD`). The workspace zoom (`useViewport`, CSS px per unit, 10%–800%) drives `setCanvasDisplaySize`: the backing store follows the on-screen size (capped at `MAX_BACKSTORE` 2048, then CSS-stretched) and `canvas.setZoom(backing / ARTBOARD)` maps the artboard onto it, so text and paths stay sharp. **`canvas.width` is therefore not the artboard size** — use `ARTBOARD` for layout, and export divides by `canvas.width`. Zoom/viewport aren't serialized by `toJSON`. Panning moves the artboard with a CSS transform; Fabric recomputes its offset on every pointer event. Fabric 7 has no default brush; a `PencilBrush` is created on mount.
-- **Layout**: full-window app (`.App` fixed inset 0). Top bar (🎨/File/Edit menus, zoom, account), `Workspace`, and `FloatingPanel`s (Tools, Layers — the selected layer's row carries its actions; there is no Object panel). Panel positions live in `localStorage["canvas-editor-panel:<id>"]` (per-browser convenience only).
+- **Layout**: full-window app (`.App` fixed inset 0). Top bar (🎨/File/Edit menus, zoom, account), then `.Main`: a left dock spacer, the `Workspace` and a right dock spacer. The side panels are `DockablePanel`s: Tools docks left and Layers right (the selected layer's row carries its actions; there is no Object panel). They start docked. Dragging a title bar more than 4 px pulls a panel out to float, and dropping it within 48 px of its own edge docks it again. A panel never moves in the React tree (docked = `position: fixed` pinned to its edge, with its spacer sized from the measured width), so its contents never remount. State lives in `usePanelDock` and is stored as `{ docked, x, y }` in `localStorage["canvas-editor-panel:<id>"]` (per-browser convenience only). Old `{ x, y }` entries read as docked. Panels have square corners.
 - **Editor API** (`useFabricJSEditor`): wraps the raw Fabric `Canvas` in a typed object (`addText`, `deleteSelected`, `setStrokeColor`, `setBackgroundColor`, `setFont`, …). Built **once per canvas** (`useMemo`); colours and font live in refs, so the editor identity is stable. Any mutation made directly on `editor.canvas` that Fabric doesn't report via `object:added/removed/modified` (property `set()`, background, z-order, scaling) must call `editor.commit()`, which re-renders, schedules an autosave and notifies `editor.subscribe()` listeners (the Layers panel relies on this, since Fabric fires no event for z-order changes).
 - **Object types**: Fabric 7 reports `type` as the lowercased class name (`'textbox'`, not `'text'`). Use `isText`/`isImage`/`isPath` from `lib/objectTypes.ts`, never string compares.
 - **Autosave**: `useCanvasAutosave` debounces 500ms and writes `{ canvasData: canvas.toJSON() }` to IndexedDB (`idb-keyval`, key `canvas-editor-scene-v1`) on object events and `requestSave()` (wired to `editor.commit`). `restore()` loads it on mount, migrating the old `localStorage["canvas-editor-autosave"]` once; saves are suppressed while restoring. `restoreScene` drops images with dead `blob:` URLs up front and loads the scene's fonts before rendering. If nothing is saved, background defaults to `#FFFFFF`.

@@ -4,6 +4,14 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-20 — Docked side panels
+
+- Tools now docks on the left and Layers on the right, as full-height sidebars, so they no longer cover the artboard. The canvas fits in the space between them.
+- Drag a panel's title bar to pull it out and float it anywhere. Drag it back to its edge (a highlighted drop zone appears) to dock it again.
+- Panels remember whether they're docked or floating, and where, in this browser.
+- When docked, the Layers list fills the full height.
+- Panels have square corners, docked or floating.
+
 ## 2026-11-19 — Object controls move into the Layers panel
 
 - The Object panel is gone. Its actions now sit inline on the selected layer's row: a Transform button that opens Scale up / down (1 unit per click, Shift: 10%) and Rotate left / right (1° per click, Shift: 15°), with the current angle and a Reset, Remove background (on images) and Delete.
