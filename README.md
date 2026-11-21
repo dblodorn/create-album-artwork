@@ -48,7 +48,7 @@ A web-based layout editor for designing album artwork, built for the SoundCloud 
 - **Reshaped 4** for UI (slate theme, dark mode)
 - **@dnd-kit** for Layers panel drag and drop
 - **@fal-ai/client** (server only) for background removal
-- **Vitest 5** + jsdom for unit tests
+- **Vitest 5** + jsdom for unit tests; **Playwright** (Chromium + WebKit) for end-to-end tests, in CI on every PR
 - The shared **dmbk GraphQL API** (`dmbk-graphql-api`) for accounts and lora-trainer data
 
 ## Develop
@@ -59,9 +59,11 @@ npm run dev         # http://localhost:3000
 npm test            # unit tests (Vitest)
 npm run typecheck   # tsc --noEmit
 npm run build       # production build
+npm run test:e2e:install  # once: Playwright's Chromium + WebKit
+npm run test:e2e    # end-to-end tests against a production build on :3100
 ```
 
-Run `typecheck`, `test` and `build` before committing.
+Run `typecheck`, `test`, `build` and `test:e2e` before committing. The end-to-end suite needs no keys or accounts: it mocks sign-in, the dmbk API and fal.
 
 ### Environment
 

@@ -40,7 +40,7 @@ export type DmbkPhoto = {
   displayUrl: string | null
 }
 
-type Operations = {
+export type Operations = {
   LoraTrainings: {
     variables: { first: number; after?: string | null }
     result: { loraTrainerTrainings: Connection<LoraTraining> }

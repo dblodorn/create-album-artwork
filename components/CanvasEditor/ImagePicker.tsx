@@ -61,7 +61,7 @@ export function ImagePicker({
             color="neutral"
             rounded
             disabled={disabled}
-            attributes={attributes}
+            attributes={{ ...attributes, 'aria-label': text }}
             className={css.CircleButton}
           />
         )}

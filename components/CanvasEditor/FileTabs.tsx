@@ -32,13 +32,14 @@ export function FileTabs({ files }: { files: OpenFiles }) {
     return () => strip.removeEventListener('wheel', onWheel)
   }, [])
 
-  // Keep the active tab in view: after a switch, New, Load, or a reload.
+  // Keep the active tab in view: after a switch, New, Load, a reload, or a
+  // rename that makes it wider.
   useEffect(() => {
     if (!activeId) return
     stripRef.current
       ?.querySelector<HTMLElement>(`[data-file-id="${CSS.escape(activeId)}"]`)
       ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [activeId, files.files.length])
+  }, [activeId, files.files.length, files.activeName])
 
   return (
     <>
@@ -96,8 +97,12 @@ function RenameInput({
   onCancel: () => void
 }) {
   const ref = useRef<HTMLInputElement>(null)
-  const cancelled = useRef(false)
+  // Set once Enter or Escape has ended the rename, so the blur that follows
+  // as the box unmounts doesn't apply it again.
+  const finished = useRef(false)
+  const openedAt = useRef(0)
   useEffect(() => {
+    openedAt.current = performance.now()
     ref.current?.focus()
     ref.current?.select()
   }, [])
@@ -110,31 +115,50 @@ function RenameInput({
       maxLength={NAME_MAX}
       aria-label="File name"
       onKeyDown={(e) => {
-        if (e.key === 'Enter') ref.current?.blur()
+        if (e.key === 'Enter') {
+          finished.current = true
+          onDone(e.currentTarget.value)
+        }
         if (e.key === 'Escape') {
-          cancelled.current = true
+          finished.current = true
           onCancel()
         }
       }}
       onBlur={(e) => {
-        if (!cancelled.current) onDone(e.currentTarget.value)
+        // File → Rename… opens this as its menu closes, and the menu then hands
+        // focus back to its button. A blur that soon isn't the person leaving
+        // the box: take focus back instead of ending the rename.
+        if (performance.now() - openedAt.current < 500) {
+          const input = e.currentTarget
+          requestAnimationFrame(() => {
+            input.focus()
+            input.select()
+          })
+          return
+        }
+        if (!finished.current) onDone(e.currentTarget.value)
       }}
     />
   )
 }
 
 function CloseFileModal({ files }: { files: OpenFiles }) {
-  const file = files.pendingClose
+  const pending = files.pendingClose
+  // Mounted only while a close is pending, so dismissing it removes it at
+  // once: Reshaped's overlay otherwise waits for its fade-out's transitionend,
+  // which headless Chromium sometimes never fires, leaving an invisible
+  // overlay over the canvas.
+  if (!pending) return null
   return (
     <Modal
-      active={!!file}
+      active
       onClose={files.cancelClose}
       size="420px"
       ariaLabel="Close file"
       attributes={SHORTCUTS_OFF}
     >
       <View gap={4}>
-        <Modal.Title>Close “{file?.name}”?</Modal.Title>
+        <Modal.Title>Close “{pending.name}”?</Modal.Title>
         <Text>
           Its work will be lost. Files are only kept in this browser, so it can&apos;t be
           recovered. Save JSON first to keep a copy.

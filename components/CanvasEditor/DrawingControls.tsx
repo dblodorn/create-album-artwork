@@ -63,7 +63,7 @@ export function DrawingControls({
             color={isDrawing ? 'primary' : 'neutral'}
             rounded
             className={css.CircleButton}
-            attributes={attributes}
+            attributes={{ ...attributes, 'aria-label': 'Draw', 'aria-pressed': isDrawing }}
           />
         )}
       </Hint>
