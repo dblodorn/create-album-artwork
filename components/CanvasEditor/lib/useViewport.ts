@@ -13,6 +13,8 @@ interface View {
   pan: Point
 }
 
+export type SavedView = View & { fitted: boolean }
+
 const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 
 const fitView = (width: number, height: number): View => {
@@ -98,6 +100,23 @@ export function useViewport(workspaceRef: RefObject<HTMLElement | null>) {
     setView((v) => ({ ...v, pan: { x: v.pan.x + dx, y: v.pan.y + dy } }))
   }, [])
 
+  // Each open file keeps its own view. A file left fitted reopens fitted to the
+  // current workspace, whatever size it is now.
+  const viewRef = useRef(view)
+  viewRef.current = view
+  const getView = useCallback(
+    (): SavedView => ({ ...viewRef.current, fitted: fittedRef.current }),
+    []
+  )
+  const restoreView = useCallback(
+    (saved: SavedView | null) => {
+      if (!saved || saved.fitted) return fit()
+      fittedRef.current = false
+      setView({ zoom: saved.zoom, pan: saved.pan })
+    },
+    [fit]
+  )
+
   return {
     zoom: view.zoom,
     pan: view.pan,
@@ -106,6 +125,8 @@ export function useViewport(workspaceRef: RefObject<HTMLElement | null>) {
     zoomBy,
     zoomTo,
     panBy,
+    getView,
+    setView: restoreView,
   }
 }
 

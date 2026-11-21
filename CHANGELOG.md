@@ -4,6 +4,14 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-20 — Several files at once, in tabs
+
+- Up to five files can be open at once, each as a tab in the top bar. Click a tab to switch; each file keeps its own undo history and zoom.
+- File → New opens a blank file, and Load JSON… now opens the file in a new tab instead of replacing the one you're working on.
+- Double-click a tab (or File → Rename…) to name a file. Download PNG and Save JSON use that name.
+- Close a file with its tab's × or File → Close. If it has anything on it you'll be asked first, since files are only kept in this browser for now.
+- Copy in one file and paste in another.
+- Your open files come back when you reload, and the artwork you had before this update opens as "Untitled".
 ## 2026-11-20 — Zoom controls float at the bottom of the canvas
 
 - Zoom out, the zoom percentage, Zoom in and Fit now sit in a rounded, frosted-glass toolbar at the bottom centre of the canvas, out of the top bar.

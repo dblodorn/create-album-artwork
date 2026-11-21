@@ -1,19 +1,19 @@
 import type { Canvas } from 'fabric'
-import { del, get, set } from 'idb-keyval'
+import { get } from 'idb-keyval'
 
 import { ensureFontLoaded } from '@/lib/googleFonts'
 import { EXPORT_SIZE } from './constants'
 import { isText } from './objectTypes'
+import { downloadName } from './openFiles'
 import type { FabricJSEditor } from './useFabricJSEditor'
 
+// The single-scene editor's autosave keys, read once to migrate into open
+// files (see fileStore.ts): IndexedDB, and before that localStorage.
 const SCENE_KEY = 'canvas-editor-scene-v1'
-// Pre-IndexedDB autosave; migrated once, then removed.
 const LEGACY_STORAGE_KEY = 'canvas-editor-autosave'
 
 type SerializedObject = { type?: string; src?: string; objects?: SerializedObject[] }
-type SerializedScene = { objects?: SerializedObject[]; [key: string]: unknown }
-
-const timestamp = () => new Date().toISOString().replace(/[:.]/g, '-')
+export type SerializedScene = { objects?: SerializedObject[]; [key: string]: unknown }
 
 const downloadBlob = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob)
@@ -93,32 +93,29 @@ export const getCanvasBlob = (
   })
 }
 
-export const downloadPNG = async (editor: FabricJSEditor) => {
+/** Downloads the 3000×3000 PNG as `<name>.png` (made filesystem-safe). */
+export const downloadPNG = async (editor: FabricJSEditor, name: string) => {
   const blob = await getCanvasBlob(editor)
-  downloadBlob(blob, `album-artwork-${timestamp()}.png`)
+  downloadBlob(blob, downloadName(name, 'png'))
 }
 
-export const downloadJSON = (editor: FabricJSEditor) => {
+/** Downloads the scene as `<name>.json`, the format Load JSON… opens. */
+export const downloadJSON = (editor: FabricJSEditor, name: string) => {
   const data = JSON.stringify({ canvasData: editor.canvas.toJSON() }, null, 2)
-  downloadBlob(
-    new Blob([data], { type: 'application/json' }),
-    `album-artwork-${timestamp()}.json`
-  )
+  downloadBlob(new Blob([data], { type: 'application/json' }), downloadName(name, 'json'))
 }
 
-export const loadJSON = async (editor: FabricJSEditor, file: File): Promise<number> => {
+/**
+ * Parses a JSON export (or a bare scene) without touching the canvas. Throws
+ * when the file isn't a scene, so no tab is opened for it.
+ */
+export const parseSceneFile = async (file: File): Promise<SerializedScene> => {
   const parsed = JSON.parse(await file.text())
-  const dropped = await restoreScene(editor.canvas, parsed.canvasData || parsed)
-  editor.commit()
-  return dropped
-}
-
-export const saveScene = async (canvas: Canvas) => {
-  try {
-    await set(SCENE_KEY, { canvasData: canvas.toJSON() })
-  } catch (e) {
-    console.warn('Failed to save canvas to IndexedDB', e)
+  const scene = parsed && typeof parsed === 'object' && 'canvasData' in parsed ? parsed.canvasData : parsed
+  if (!scene || typeof scene !== 'object' || !Array.isArray(scene.objects)) {
+    throw new Error('Not a canvas scene')
   }
+  return scene as SerializedScene
 }
 
 const readLegacyScene = (): SerializedScene | null => {
@@ -130,27 +127,16 @@ const readLegacyScene = (): SerializedScene | null => {
   }
 }
 
-// Restores the autosaved scene, migrating the old localStorage save if that's
-// all there is. Resolves false when there was nothing to restore.
-export const loadScene = async (canvas: Canvas): Promise<boolean> => {
+/**
+ * The single-scene editor's autosave (IndexedDB, or the older localStorage
+ * save), for the one-time migration into open files. Reads only.
+ */
+export const readOldScene = async (): Promise<SerializedScene | null> => {
   try {
     const saved = await get<{ canvasData?: SerializedScene }>(SCENE_KEY)
-    if (saved?.canvasData) {
-      await restoreScene(canvas, saved.canvasData)
-      return true
-    }
-
-    const legacy = readLegacyScene()
-    if (legacy) {
-      await restoreScene(canvas, legacy)
-      await saveScene(canvas)
-      localStorage.removeItem(LEGACY_STORAGE_KEY)
-      return true
-    }
+    if (saved?.canvasData) return saved.canvasData
   } catch (e) {
-    console.warn('Failed to restore saved canvas', e)
+    console.warn('Failed to read the old saved scene', e)
   }
-  return false
+  return readLegacyScene()
 }
-
-export const clearSavedScene = () => del(SCENE_KEY)

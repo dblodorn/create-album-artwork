@@ -10,7 +10,8 @@ import type { FabricJSEditor } from './useFabricJSEditor'
  * Fabric's object events and `editor.commit(label)`. Everything in one
  * animation frame becomes one step, so a Clear of ten objects is one undo.
  * `reset()` runs once the saved scene is restored, dropping the steps the
- * restore itself produced.
+ * restore itself produced. Each open file has its own stack: `swap()` replaces
+ * the scene without recording it and installs that file's stack.
  */
 
 type ModifiedEvent = { action?: string; target?: FabricObject }
@@ -36,10 +37,18 @@ export type History = {
   transaction: (label: string, fn: () => unknown) => Promise<void>
   /** Tags the next commit, so quick runs with the same key merge into one step (nudges, blur). */
   markMerge: (key: string) => void
+  /** The active file's stack (pending changes recorded first), to park with that file. */
+  current: () => HistoryStack<Snapshot> | null
+  /**
+   * Runs `replaceScene` without recording anything, then installs `next`, or a
+   * fresh stack based on the scene it left (a file shown for the first time).
+   */
+  swap: (next: HistoryStack<Snapshot> | null, replaceScene: () => Promise<void>) => Promise<void>
 }
 
-type Controls = Omit<History, 'canUndo' | 'canRedo' | 'undoLabel' | 'redoLabel'> & {
-  stack: HistoryStack<Snapshot>
+type Controls = Omit<History, 'canUndo' | 'canRedo' | 'undoLabel' | 'redoLabel' | 'current'> & {
+  readonly stack: HistoryStack<Snapshot>
+  current: () => HistoryStack<Snapshot>
 }
 
 const noop = () => {}
@@ -51,7 +60,7 @@ export function useHistory(editor: FabricJSEditor | undefined): History {
   useEffect(() => {
     if (!editor) return
     const { canvas } = editor
-    const stack = new HistoryStack(captureSnapshot(canvas))
+    let stack = new HistoryStack(captureSnapshot(canvas))
     const bump = () => setVersion((v) => v + 1)
 
     // Records from the start (so a Fast Refresh remount keeps working); the
@@ -134,7 +143,9 @@ export function useHistory(editor: FabricJSEditor | undefined): History {
     }
 
     controls.current = {
-      stack,
+      get stack() {
+        return stack
+      },
       undo: () => {
         flush()
         apply(stack.undo())
@@ -167,6 +178,22 @@ export function useHistory(editor: FabricJSEditor | undefined): History {
       markMerge: (key: string) => {
         mergeKey = key
       },
+      current: () => {
+        flush()
+        return stack
+      },
+      swap: async (next, replaceScene) => {
+        flush()
+        restoring = true
+        try {
+          await replaceScene()
+        } finally {
+          restoring = false
+        }
+        stack = next ?? new HistoryStack(captureSnapshot(canvas))
+        clearPending()
+        bump()
+      },
     }
     bump()
 
@@ -193,6 +220,14 @@ export function useHistory(editor: FabricJSEditor | undefined): History {
     []
   )
   const markMerge = useCallback((key: string) => controls.current?.markMerge(key) ?? noop(), [])
+  const current = useCallback(() => controls.current?.current() ?? null, [])
+  const swap = useCallback(
+    async (next: HistoryStack<Snapshot> | null, replaceScene: () => Promise<void>) => {
+      if (controls.current) await controls.current.swap(next, replaceScene)
+      else await replaceScene()
+    },
+    []
+  )
 
   const stack = controls.current?.stack
   return {
@@ -205,5 +240,7 @@ export function useHistory(editor: FabricJSEditor | undefined): History {
     reset,
     transaction,
     markMerge,
+    current,
+    swap,
   }
 }
