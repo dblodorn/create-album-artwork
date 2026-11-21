@@ -149,14 +149,19 @@ Each test name quotes the spec scenario it covers where there is one.
   - No WebKit-only (Safari) bugs found.
 ## 5. CI (design §8)
 
-- [ ] 5.1 Add `.nvmrc`, matching the Node major that Vercel uses for the project, and `.github/workflows/ci.yml`:
+- [x] 5.1 Add `.nvmrc`, matching the Node major that Vercel uses for the project, and `.github/workflows/ci.yml`:
   - triggers on PRs and pushes to `main`, with concurrency cancellation;
   - steps: `npm ci`, typecheck, unit tests, build, a Playwright browser cache, `playwright install --with-deps chromium webkit`, `E2E_SKIP_BUILD=1 npx playwright test`;
   - on failure, upload the report and traces (kept 7 days).
 
   Verify on the PR: the workflow runs green, and a deliberately broken assertion (pushed, then reverted) produces a red check with downloadable traces.
-- [ ] 5.2 Confirm the CI run time and record it here. If it's over 5 minutes, split the browsers into a matrix and record the new time.
+  - *Verified on PR #20:*
+    - The first run (44861081828) went red: 71/72, with WebKit on Linux saving `Night Drive.png` as `Night_Drive.png`. The `playwright-report` artifact (report and traces, about 1.6 MB) was uploaded, which covers the red-check half. No deliberate break was needed.
+    - The app is right. The test now accepts WebKit-on-Linux underscores and re-feeds the JSON under the app's name (fix PR, after #20 was merged with the red check).
+  - `.nvmrc` = 24 (Vercel's current default; the project setting wasn't checked).
+- [x] 5.2 Confirm the CI run time and record it here. If it's over 5 minutes, split the browsers into a matrix and record the new time.
 
+  - *Results:* the whole job took 3 min 41 s, and the e2e step 1 min 46 s, including two retries of the failing test (`npm ci` 12 s, build 10 s, browser install 69 s with a cold cache). That's under 5 minutes, so there's no matrix split.
 ## 6. Docs and wrap-up
 
 - [x] 6.1 Update `CLAUDE.md`:

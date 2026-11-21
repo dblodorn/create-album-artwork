@@ -71,15 +71,19 @@ test.describe('editor', () => {
     await addText(page)
     await ui.tabs.rename('Untitled', 'Night Drive')
 
+    // WebKit on Linux turns spaces in a download's name into underscores
+    // (Safari on macOS doesn't); the app asks for "Night Drive.png".
+    const saved = (name: string) => name.replace(/_/g, ' ')
+
     const [png] = await Promise.all([page.waitForEvent('download'), ui.file.choose('Download PNG')])
-    expect(png.suggestedFilename()).toBe('Night Drive.png')
+    expect(saved(png.suggestedFilename())).toBe('Night Drive.png')
 
     const [json] = await Promise.all([page.waitForEvent('download'), ui.file.choose('Save JSON')])
-    expect(json.suggestedFilename()).toBe('Night Drive.json')
+    expect(saved(json.suggestedFilename())).toBe('Night Drive.json')
     const buffer = readFileSync((await json.path())!)
 
     await page.locator('input[type="file"][accept*="json"]').setInputFiles({
-      name: json.suggestedFilename(),
+      name: 'Night Drive.json',
       mimeType: 'application/json',
       buffer,
     })
