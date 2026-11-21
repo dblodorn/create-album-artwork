@@ -10,15 +10,103 @@
 /* TOP BAR */
 .TopBar {
   flex: 0 0 48px;
-  display: flex;
+  /* Menus | file tabs | account: the menus and account never move; the tabs
+     take the space between and scroll under their edges. */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--rs-unit-x4);
+  gap: var(--rs-unit-x2);
   padding: 0 var(--rs-unit-x4);
   background: var(--rs-color-background-elevation-base);
   border-bottom: 1px solid var(--rs-color-border-neutral-faded);
   position: relative;
   z-index: 1;
+}
+
+/* FILE TABS (top bar, between the menus and the account) */
+.FileTabs {
+  --fade: var(--rs-unit-x3);
+  display: flex;
+  align-items: center;
+  gap: var(--rs-unit-x1);
+  height: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding: 0 var(--fade);
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--fade),
+    #000 calc(100% - var(--fade)),
+    transparent
+  );
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.FileTab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  max-width: 200px;
+  padding-inline-start: var(--rs-unit-x2);
+  color: var(--rs-color-foreground-neutral-faded);
+  border-bottom: 2px solid transparent;
+  &:hover {
+    color: var(--rs-color-foreground-neutral);
+    background: var(--rs-color-background-neutral-faded);
+  }
+  &[data-active] {
+    color: var(--rs-color-foreground-neutral);
+    background: var(--rs-color-background-neutral-faded);
+    border-bottom-color: var(--rs-color-foreground-neutral);
+  }
+}
+
+.FileTabLabel {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--rs-font-size-body-2);
+  cursor: pointer;
+  &:focus-visible {
+    outline: var(--rs-outline);
+    outline-offset: 2px;
+  }
+}
+
+.FileTabInput {
+  width: 140px;
+  min-width: 0;
+  padding: 0 var(--rs-unit-x1);
+  border: 1px solid var(--rs-color-border-neutral);
+  background: var(--rs-color-background-elevation-base);
+  color: var(--rs-color-foreground-neutral);
+  font: inherit;
+  font-size: var(--rs-font-size-body-2);
+}
+
+.FileTabClose.FileTabClose {
+  flex: 0 0 auto;
+  margin-inline-start: var(--rs-unit-x1);
+  color: inherit;
+}
+
+/* A note under menu items (why they're disabled). */
+.MenuNote {
+  display: block;
+  max-width: 240px;
+  padding: var(--rs-unit-x1) var(--rs-unit-x2);
 }
 
 /* ACCOUNT (top bar, right end) */

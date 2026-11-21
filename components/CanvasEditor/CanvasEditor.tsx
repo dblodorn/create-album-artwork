@@ -1,7 +1,7 @@
 'use client'
 
 import { FabricImage, type FabricObject } from 'fabric'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Button, Divider, Text, View, useToast } from 'reshaped'
 
 import { Hint } from '@/design'
@@ -14,6 +14,7 @@ import { ColorEditor } from './ColorEditor'
 import { DrawingControls } from './DrawingControls'
 import { EditMenu } from './EditMenu'
 import { FileMenu } from './FileMenu'
+import { FileTabs } from './FileTabs'
 import { DockablePanel } from './DockablePanel'
 import { FontSelector } from './FontSelector'
 import { Select, Type } from './icons'
@@ -30,11 +31,11 @@ import { useCanvasLayers } from './lib/useCanvasLayers'
 import { useEditCommands } from './lib/useEditCommands'
 import { useEditorShortcuts } from './lib/useEditorShortcuts'
 import { useHistory } from './lib/useHistory'
+import { useOpenFiles } from './lib/useOpenFiles'
 import { usePanelDock } from './lib/usePanelDock'
 import { useViewport } from './lib/useViewport'
 import { Workspace } from './Workspace'
 import { ZoomControls } from './ZoomControls'
-import { useCanvasAutosave } from '@/lib/useCanvasAutosave'
 
 export function CanvasEditor() {
   const toast = useToast()
@@ -42,18 +43,13 @@ export function CanvasEditor() {
   const { editor, onReady } = useFabricJSEditor({
     onChange: () => requestSaveRef.current(),
   })
-  const autosave = useCanvasAutosave(editor?.canvas ?? null)
-  requestSaveRef.current = autosave.requestSave
-
   const workspaceRef = useRef<HTMLDivElement>(null)
   const viewport = useViewport(workspaceRef)
   const toolsDock = usePanelDock('tools')
   const layersDock = usePanelDock('layers')
 
   const history = useHistory(editor)
-  const { reset: resetHistory } = history
 
-  const [initialized, setInitialized] = useState(false)
   const [backgroundColor, setBackgroundColor] = useState(DEFAULT_BACKGROUND)
 
   // Keep the background picker in step with whatever was restored or loaded.
@@ -63,25 +59,15 @@ export function CanvasEditor() {
     setBackgroundColor(typeof bg === 'string' && bg ? bg : DEFAULT_BACKGROUND)
   }, [editor])
 
-  const { restore } = autosave
-  useEffect(() => {
-    const initialize = async () => {
-      if (initialized || !editor) return
-      setInitialized(true)
-
-      const restored = await restore()
-      if (!restored) {
-        editor.canvas.backgroundColor = DEFAULT_BACKGROUND
-      }
-
-      editor.canvas.requestRenderAll()
-      syncFromCanvas()
-      // Undo starts from the restored scene.
-      resetHistory()
-    }
-
-    initialize()
-  }, [editor, initialized, restore, syncFromCanvas, resetHistory])
+  // The open files (tabs): restores them on load, owns autosave, swaps scenes.
+  const files = useOpenFiles({
+    editor,
+    history,
+    viewport,
+    onSceneShown: syncFromCanvas,
+    onError: (text) => toast.show({ color: 'critical', text }),
+  })
+  requestSaveRef.current = files.requestSave
 
   const {
     activeItem,
@@ -222,14 +208,10 @@ export function CanvasEditor() {
       <header className={css.TopBar}>
         <View direction="row" gap={1} align="center">
           <AppMenu />
-          <FileMenu
-            editor={editor}
-            history={history}
-            hasObjects={layers.layers.length > 0}
-            onSceneLoaded={syncFromCanvas}
-          />
+          <FileMenu editor={editor} files={files} hasObjects={layers.layers.length > 0} />
           <EditMenu commands={commands} />
         </View>
+        <FileTabs files={files} />
         <View direction="row" gap={2} align="center">
           <AccountMenu />
         </View>

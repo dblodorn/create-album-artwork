@@ -1,43 +1,37 @@
 import { useRef } from 'react'
-import { Button, DropdownMenu, useToast } from 'reshaped'
+import { Button, DropdownMenu, Text, useToast } from 'reshaped'
 
+import css from './CanvasEditor.module.css'
 import { SHORTCUTS_OFF } from './lib/keyboard'
-import { downloadJSON, downloadPNG, loadJSON } from './lib/uploadCanvas'
+import { MAX_OPEN_FILES } from './lib/openFiles'
+import { downloadJSON, downloadPNG } from './lib/uploadCanvas'
 import type { FabricJSEditor } from './lib/useFabricJSEditor'
-import type { History } from './lib/useHistory'
+import type { OpenFiles } from './lib/useOpenFiles'
 
 export function FileMenu({
   editor,
-  history,
+  files,
   hasObjects,
-  onSceneLoaded,
 }: {
   editor: FabricJSEditor | undefined
-  history: History
+  files: OpenFiles
   hasObjects: boolean
-  onSceneLoaded?: () => void
 }) {
   const toast = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { canOpenMore, activeName } = files
 
   const handleLoadJSONFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!editor || !file) return
-    try {
-      const dropped = await loadJSON(editor, file)
-      // A loaded scene starts a fresh history.
-      history.reset()
-      onSceneLoaded?.()
-      if (dropped) {
-        toast.show({
-          color: 'warning',
-          text: `${dropped} image(s) in that file referenced temporary blob: URLs and were skipped.`,
-        })
-      }
-    } catch (err) {
-      console.error('Failed to load JSON', err)
-      toast.show({ color: 'critical', text: "Couldn't load that file as a canvas scene." })
+    if (!file) return
+    // Opens in a new tab; a file that isn't a scene opens nothing (and says so).
+    const dropped = await files.openFromJSON(file)
+    if (dropped) {
+      toast.show({
+        color: 'warning',
+        text: `${dropped} image(s) in that file referenced temporary blob: URLs and were skipped.`,
+      })
     }
   }
 
@@ -53,14 +47,30 @@ export function FileMenu({
         </DropdownMenu.Trigger>
         <DropdownMenu.Content attributes={SHORTCUTS_OFF}>
           <DropdownMenu.Section>
-            <DropdownMenu.Item onClick={() => editor && void downloadPNG(editor)}>
+            <DropdownMenu.Item disabled={!canOpenMore} onClick={() => void files.newFile()}>
+              New
+            </DropdownMenu.Item>
+            <DropdownMenu.Item disabled={!canOpenMore} onClick={() => fileInputRef.current?.click()}>
+              Load JSON…
+            </DropdownMenu.Item>
+            {!canOpenMore && (
+              <Text variant="caption-1" color="neutral-faded" className={css.MenuNote}>
+                {MAX_OPEN_FILES} files are open, the most at once. Close one to open another.
+              </Text>
+            )}
+          </DropdownMenu.Section>
+          <DropdownMenu.Section>
+            <DropdownMenu.Item onClick={files.startRename}>Rename…</DropdownMenu.Item>
+            <DropdownMenu.Item onClick={() => files.activeId && void files.requestClose(files.activeId)}>
+              Close
+            </DropdownMenu.Item>
+          </DropdownMenu.Section>
+          <DropdownMenu.Section>
+            <DropdownMenu.Item onClick={() => editor && void downloadPNG(editor, activeName)}>
               Download PNG
             </DropdownMenu.Item>
-            <DropdownMenu.Item onClick={() => editor && downloadJSON(editor)}>
+            <DropdownMenu.Item onClick={() => editor && downloadJSON(editor, activeName)}>
               Save JSON
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onClick={() => fileInputRef.current?.click()}>
-              Load JSON…
             </DropdownMenu.Item>
           </DropdownMenu.Section>
           <DropdownMenu.Section>

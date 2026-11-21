@@ -16,21 +16,45 @@ User ──▶ CanvasEditor.tsx (client)
                      useFabricJSEditor.buildEditor(canvas)  (once per canvas)
                        typed API: addText/setStrokeColor/setFont/commit/…
                                     │
-   object:modified|added|removed + commit() ──▶ useCanvasAutosave
-                                    │            (500ms debounce)
+   object:modified|added|removed + commit() ──▶ useCanvasAutosave (inside useOpenFiles)
+                                    │            (500ms debounce, active file)
                                     ▼
-                         IndexedDB["canvas-editor-scene-v1"]
-                         { canvasData: canvas.toJSON() }
+                         FileStore (IndexedDB): album-artwork-file:<id> = { canvasData }
+                                                album-artwork-files-v1   = index (§1h)
 
-FileMenu ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(3) → 3000×3000 PNG
-                 ──▶ downloadJSON = { canvasData } → .json file
-                 ──▶ loadJSON → restoreScene (drop blob: images, load fonts)
+FileMenu ──▶ getCanvasBlob(editor) = canvas.toCanvasElement(3) → 3000×3000 PNG → "<name>.png"
+                 ──▶ downloadJSON = { canvasData } → "<name>.json"
+                 ──▶ Load JSON… → useOpenFiles.openFromJSON → new tab (restoreScene: drop blob: images, load fonts)
 ```
 
 - Everything is client-side except two routes: `/api/dmbk` (§1a) and `/api/session` (§1b). There is **no server state and no DB**; accounts live in the dmbk GraphQL API.
 - The canvas works in fixed 1000×1000 logical units and is only CSS-scaled to its square parent (max-width 700px wrapper). Export multiplies by 3 → a 3000×3000 PNG regardless of viewport.
 - Uploaded images are downscaled to ≤2048px and embedded as data URLs, so the scene (and exported JSON) is self-contained.
 - `preserveObjectStacking = true` — z-order only changes via explicit layer controls: the Layers panel (drag, Alt+↑/↓) and the Arrange shortcuts/Edit menu (⌘] ⌘[ ⇧⌘] ⇧⌘[). The Layers panel has no arrange buttons.
+
+## 1h. Open files (tabs)
+
+Up to five files, each a tab in the top bar (`FileTabs`), all on the **one** Fabric canvas. `useOpenFiles` owns the session and creates the autosave.
+
+```
+start ── loadOrMigrateIndex(store, readOldScene) ── index { version:1, order, activeId, files{id: {name, createdAt, updatedAt}} }
+           first run: old canvas-editor-scene-v1 → "Untitled" (scene written before index; old key kept for rollback)
+         show(active scene)
+
+switchTo(B):  read B's stored scene if B wasn't shown this visit (unreadable → toast, stay on A)
+              A: exitEditing → autosave.flush() → park { objects: live instances, background, history.current(), viewport.getView() }
+              autosave.suspend(() => history.swap(B.history | new, () => clear → add B's objects | restoreScene → background → commit()))
+              viewport.setView(B.view | fit)        (a scene Fabric can't build → A is shown again)
+```
+
+- **Why live objects:** undo snapshots (§1d) reference the actual objects, so a file's objects must stay the same instances while it's open. Re-reading its JSON on every switch would orphan its history.
+- **No side effects from a swap:** `suspend` makes autosave ignore the add/remove events, and `swap` runs with history's `restoring` flag. The `commit()` inside still refreshes the Layers panel and the background picker. A plain switch writes nothing.
+- **`FileStore`** (`readIndex/writeIndex/readScene/writeScene/removeScene`) is the remote-save seam. The index is metadata only, so a remote store can list files without fetching scenes. Scenes use the export format. A memory store backs tests and blocked storage.
+- **Close:**
+  - Closing a file with objects (live or stored) opens a confirmation `Modal`.
+  - Closing the active file activates its right neighbour, or its left one at the end (`afterClose`). Closing the last file leaves a fresh "Untitled".
+  - A closed file's scene key is deleted.
+- **Known limit:** two browser windows on the editor overwrite each other's index (last write wins), as the single scene did. Saving to an account will need versioning.
 
 ## 1d. Undo, clipboard and the Edit menu
 
