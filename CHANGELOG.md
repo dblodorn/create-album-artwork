@@ -4,6 +4,12 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-20 — File → Rename… works
+
+- File → Rename… now keeps the name box open until you press Enter, press Escape or click away. Before, it could close the moment it opened.
+- Renaming a tab so it no longer fits scrolls it back into view.
+- Closing a file's confirmation no longer flashes an empty name as it fades.
+
 ## 2026-11-20 — Several files at once, in tabs
 
 - Up to five files can be open at once, each as a tab in the top bar. Click a tab to switch; each file keeps its own undo history and zoom.

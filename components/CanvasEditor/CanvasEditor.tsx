@@ -29,6 +29,7 @@ import { ARTBOARD, DEFAULT_BACKGROUND } from './lib/constants'
 import { isImage, isText } from './lib/objectTypes'
 import { useCanvasLayers } from './lib/useCanvasLayers'
 import { useEditCommands } from './lib/useEditCommands'
+import { useE2EHook } from './lib/useE2EHook'
 import { useEditorShortcuts } from './lib/useEditorShortcuts'
 import { useHistory } from './lib/useHistory'
 import { useOpenFiles } from './lib/useOpenFiles'
@@ -90,6 +91,9 @@ export function CanvasEditor() {
     editor?.addText('Text')
     if (isDrawing) toggleDraw()
   }, [editor, toggleDraw, isDrawing])
+
+  // Read-only state for the e2e tests, only with ?e2e in the URL.
+  useE2EHook({ editor, history, viewport, files })
 
   const layers = useCanvasLayers(editor)
   const { select: selectLayer } = layers
@@ -247,7 +251,7 @@ export function CanvasEditor() {
                 icon={Select}
                 color="neutral"
                 rounded
-                attributes={attributes}
+                attributes={{ ...attributes, 'aria-label': 'Select' }}
                 className={css.CircleButton}
               />
             )}
@@ -261,7 +265,7 @@ export function CanvasEditor() {
                 icon={Type}
                 color="neutral"
                 rounded
-                attributes={attributes}
+                attributes={{ ...attributes, 'aria-label': 'Add text' }}
                 className={css.CircleButton}
               />
             )}

@@ -19,12 +19,21 @@ npm run start   # next start
 npm run typecheck  # tsc --noEmit
 npm test           # vitest run (unit tests)
 npm run test:watch # vitest in watch mode
+npm run test:e2e   # Playwright end-to-end (production build on :3100, Chromium + WebKit)
+npm run test:e2e:ui       # Playwright UI mode
+npm run test:e2e:install  # one-time: download the Chromium and WebKit browsers
 npm run theme      # recompile the `dmbk` Reshaped theme (design/reshaped.config.mjs → design/themes/dmbk/, checked in)
 ```
 
-No lint configured; run `typecheck`, `test` and `build` before committing.
+No lint configured; run `typecheck`, `test`, `build` and `test:e2e` before committing. CI (`.github/workflows/ci.yml`) runs all four on every PR and push to `main`.
 
-**Tests** (Vitest 5, `vitest.config.ts`): `*.test.ts(x)` files sit next to the code they test. Default environment is Node; add `// @vitest-environment jsdom` at the top of a file that needs the DOM or a Fabric canvas. `test/canvasStub.ts` gives jsdom a no-op 2D context, so Fabric's object model, stacking, selection and `clone()` work under test but nothing is painted (assert on objects and properties, never pixels). `server-only` is aliased to an empty module, and `@/` resolves as in the app. Keep logic that's worth testing in pure functions or small classes (no React), and test hooks and UI in the browser. Deploys to Vercel (`create-album-artwork.vercel.app`) via the GitHub repo.
+**Tests** (Vitest 5, `vitest.config.ts`): `*.test.ts(x)` files sit next to the code they test. Default environment is Node; add `// @vitest-environment jsdom` at the top of a file that needs the DOM or a Fabric canvas. `test/canvasStub.ts` gives jsdom a no-op 2D context, so Fabric's object model, stacking, selection and `clone()` work under test but nothing is painted (assert on objects and properties, never pixels). `server-only` is aliased to an empty module, and `@/` resolves as in the app. Keep logic that's worth testing in pure functions or small classes (no React); hooks and UI are covered by the e2e suite. Deploys to Vercel (`create-album-artwork.vercel.app`) via the GitHub repo.
+
+**End-to-end** (Playwright, `playwright.config.ts`, `e2e/*.spec.ts`): runs against the **production build** on port **3100** (never `:3000`/`:3001`), in Chromium and WebKit (Safari), with each test in a fresh browser context (empty storage). `webServer.env` blanks the app's keys (Google client ID, dmbk key, fal), so a local run matches CI: no Google script, and the server never calls the real API. A local run rebuilds `.next` that way unless a server is already up on :3100. `reducedMotion: 'reduce'` makes Reshaped close overlays without waiting for a transitionend (headless Chromium sometimes never fires it).
+- **State without pixels:** tests open `/?e2e`, which installs a read-only `window.__ALBUM_ARTWORK_E2E__` (`lib/useE2EHook.ts`: objects with centres, selection, background, undo/redo labels, zoom, fitted, active file, ready). It exists only with the flag. Read it with `hook(page, key)` from `e2e/fixtures.ts`.
+- **Fixtures** (`e2e/fixtures.ts`): `app.open()`; `seed()` (an init script that runs before the app, e.g. the old single-scene autosave); `net` (automatic: any request off localhost that no mock handled fails the test; Google Fonts are allowed, `https://fixtures.e2e/*` serves a CORS-enabled fixture PNG); `session(state)` fakes `GET /api/session`; `dmbk` and `fal` fake `/api/dmbk` and `/api/background-removal*` (with `fail()` for error states). Mock data in `e2e/mocks/` is typed with `satisfies` against the real types, so an API shape change fails `tsc`.
+- **Driving the UI:** page objects in `e2e/pages/` find things by role and accessible name (no `data-testid` so far; icon-only buttons have `aria-label`s). Canvas points come from `artboardPoint`/`objectCenter` (artboard units → screen), never fixed pixels. Shortcuts use `shortcut(page, 'Mod+Z')`, which follows the browser's reported platform as the app does. Storage helpers read the IndexedDB file index and scenes and can make saves fail.
+- **Rule:** a new user-visible flow gets an e2e test. Wait on state (`expect.poll` on the hook, web-first assertions), never on sleeps. The Layers panel rebuilds a frame after the canvas, and an add plus a nudge in one frame record as one undo step; the helpers wait for both.
 
 ## Stack
 
@@ -94,6 +103,7 @@ components/CanvasEditor/
     uploadCanvas.ts        # getCanvasBlob, downloadPNG/JSON(editor, name), parseSceneFile, restoreScene, readOldScene (migration read)
     openFiles.ts           # pure: MAX_OPEN_FILES (5), names (Untitled N, cleanName, nameFromFilename, downloadName), afterClose; FileMeta/FileIndex
     fileStore.ts           # FileStore interface (the remote-save seam): IndexedDB + memory stores; loadOrMigrateIndex
+    useE2EHook.ts          # read-only window.__ALBUM_ARTWORK_E2E__ for e2e tests, only with ?e2e
     useOpenFiles.ts        # the open files: start/migrate, switchTo (scene swap on the one canvas), new, openFromJSON, rename, close; owns autosave
     constants.ts           # ARTBOARD (1000), EXPORT_SIZE (3000), zoom limits, FIT_PADDING / ZOOM_TOOLBAR_CLEARANCE (test keeps Fit clear of the toolbar), defaults
     useViewport.ts         # zoom/pan state (getView/setView per file); starts fitted, refits on resize until user zooms/pans; then panAfterResize keeps the artboard still on dock changes
@@ -135,6 +145,9 @@ design/                 # the dmbk visual language, self-contained (no app impor
   Hint.tsx              # tooltip in FFF Italic; mergeTriggerAttributes for a Hint + Popover on one button
   GlassToolbar.tsx      # role=toolbar row in a rounded glass pill (.dmbk-glass .dmbk-toolbar); the app positions it
   usage.test.ts         # fails if app code imports Reshaped's Tooltip
+e2e/                    # Playwright suites (*.spec.ts), fixtures.ts (app/seed/net/session/dmbk/fal), pages/, helpers/, mocks/ (typed)
+playwright.config.ts    # :3100 production build, chromium + webkit, blank app keys, reduced motion
+.github/workflows/ci.yml # PRs + main: npm ci → typecheck → test → build → Playwright (report + traces on failure)
 ```
 
 ## Key patterns
