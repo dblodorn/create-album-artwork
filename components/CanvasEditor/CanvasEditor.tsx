@@ -26,6 +26,7 @@ import {
   useFabricJSEditor,
 } from './lib'
 import { ARTBOARD, DEFAULT_BACKGROUND } from './lib/constants'
+import { EFFECT_LABEL } from './lib/objectEffects'
 import { isImage, isText } from './lib/objectTypes'
 import { useCanvasLayers } from './lib/useCanvasLayers'
 import { useEditCommands } from './lib/useEditCommands'
@@ -75,7 +76,7 @@ export function CanvasEditor() {
     deleteSelected,
     scaleActiveItemUpDown,
     rotateActiveItem,
-    setActiveItemBlur,
+    setActiveItemEffect,
     handleDeselectActiveObject,
   } = useEditorItems(editor)
 
@@ -299,10 +300,11 @@ export function CanvasEditor() {
           isDrawing={isDrawing}
           onScale={scaleActiveItemUpDown}
           onRotate={rotateActiveItem}
-          onBlur={(value, final) => {
-            // Arrow keys on the slider commit per press; merge quick runs into one step.
-            if (final) history.markMerge('blur')
-            setActiveItemBlur(value, final)
+          onEffect={(key, value, final, merge) => {
+            // Arrow keys on a slider commit per press; merge quick runs into one
+            // step per control.
+            if (final && merge) history.markMerge(EFFECT_LABEL[key].toLowerCase())
+            setActiveItemEffect(key, value, final)
           }}
           onDelete={deleteSelected}
         />

@@ -22,6 +22,7 @@ import { LayerRow } from './LayerRow'
 import { LayerActions } from './LayerActions'
 import { SHORTCUTS_OFF } from './lib/keyboard'
 import { setLayersPanelHovered } from './lib/layersHover'
+import type { OnEffect } from './lib/objectEffects'
 import type { RotateBy } from './lib/rotate'
 import type { Layer } from './lib/useCanvasLayers'
 
@@ -36,7 +37,7 @@ export function LayersPanel({
   isDrawing,
   onScale,
   onRotate,
-  onBlur,
+  onEffect,
   onDelete,
 }: {
   layers: Layer[]
@@ -48,7 +49,7 @@ export function LayersPanel({
   isDrawing: boolean
   onScale: (direction: 'up' | 'down', coarse: boolean) => void
   onRotate: (by: RotateBy) => void
-  onBlur: (value: number, final: boolean) => void
+  onEffect: OnEffect
   onDelete: () => void
 }) {
   const hintId = useId()
@@ -204,7 +205,7 @@ export function LayersPanel({
                           isDrawing={isDrawing}
                           onScale={onScale}
                           onRotate={onRotate}
-                          onBlur={onBlur}
+                          onEffect={onEffect}
                           onDelete={onDelete}
                           onRemoveBackground={onRemoveBackground}
                         />

@@ -146,6 +146,45 @@ export class LayersPanel {
   }
 }
 
+type EffectName = 'Blur' | 'Brightness' | 'Contrast' | 'Saturation' | 'Tint'
+
+/** The selected layer's Effects popout. Each control is a group named after it. */
+export class EffectsPopout {
+  constructor(readonly page: Page) {}
+  get button() {
+    return new LayersPanel(this.page).list.getByRole('button', { name: 'Effects', exact: true })
+  }
+  async open() {
+    await this.button.click()
+    await expect(this.group('Blur')).toBeVisible()
+  }
+  group(name: EffectName) {
+    return this.page.getByRole('group', { name, exact: true })
+  }
+  slider(name: EffectName) {
+    return this.group(name).locator('input[type="range"]')
+  }
+  reset(name: EffectName) {
+    return this.page.getByRole('button', { name: `Reset ${name}`, exact: true })
+  }
+  get tintColour() {
+    return this.page.getByLabel('Tint colour')
+  }
+  get unsupportedNote() {
+    return this.page.getByText("Effects aren't supported in this browser.")
+  }
+  /** Drags a slider's thumb from `from` to `to` (fractions of the track) in several moves: one drag. */
+  async drag(name: EffectName, from: number, to: number) {
+    const track = (await this.group(name).locator(':scope > :last-child').boundingBox())!
+    const y = track.y + track.height / 2
+    const x = (f: number) => track.x + track.width * f
+    await this.page.mouse.move(x(from), y)
+    await this.page.mouse.down()
+    for (let i = 1; i <= 8; i++) await this.page.mouse.move(x(from + ((to - from) * i) / 8), y)
+    await this.page.mouse.up()
+  }
+}
+
 export class Panels {
   constructor(readonly page: Page) {}
   panel(name: 'Tools' | 'Layers') {
@@ -177,6 +216,7 @@ export const pages = (page: Page) => ({
   closeDialog: new CloseDialog(page),
   zoom: new ZoomToolbar(page),
   layers: new LayersPanel(page),
+  effects: new EffectsPopout(page),
   panels: new Panels(page),
   tools: new Tools(page),
 })

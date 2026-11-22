@@ -3,7 +3,7 @@ import { Canvas, PencilBrush } from 'fabric'
 
 import { ARTBOARD, DEFAULT_BRUSH_WIDTH } from './lib/constants'
 import { installCornerRotation } from './lib/cornerRotation'
-import { installObjectBlur } from './lib/objectBlur'
+import { installObjectEffects } from './lib/objectEffects'
 import { STROKE } from './lib/defaultShapes'
 import {
   type FabricJSEditor,
@@ -12,9 +12,9 @@ import {
 } from './lib/useFabricJSEditor'
 
 // Before any object is created or restored, so every object gets the corner
-// rotation zones and serialises / renders blur.
+// rotation zones and serialises / renders layer effects.
 installCornerRotation()
-installObjectBlur()
+installObjectEffects()
 
 export interface Props {
   className?: string

@@ -4,6 +4,13 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-21 — Brightness, contrast, saturation and tint for layers
+
+- The Effects popout (the wand on a selected layer) now has Brightness, Contrast and Saturation sliders, from −100 to +100, for images, drawings and shapes. Saturation at −100 turns a layer greyscale.
+- Tint colours a layer in a colour you pick, by a Strength from 0 to 100%, keeping its light and dark. Transparent areas stay clear.
+- Every control, Blur included, has its own Reset, and each change is one undo step named after it.
+- Effects are saved with the file and show in the PNG export. Text layers keep Blur only.
+
 ## 2026-11-20 — File → Rename… works
 
 - File → Rename… now keeps the name box open until you press Enter, press Escape or click away. Before, it could close the moment it opened.
