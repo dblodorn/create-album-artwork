@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FabricObject } from 'fabric'
 
-import { MAX_BLUR } from './objectBlur'
+import { EFFECT_LABEL, type EffectKey, clampEffect, normaliseColor } from './objectEffects'
 import { type RotateBy, nextAngle } from './rotate'
 import { scaleFactor } from './scale'
 import type { FabricJSEditor } from './useFabricJSEditor'
@@ -67,13 +67,19 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
     [activeItem, editor]
   )
 
-  // Live while dragging (no history step), committed once at the end.
-  const setActiveItemBlur = useCallback(
-    (value: number, final: boolean) => {
+  // Live while dragging (no history step), committed once at the end. A
+  // colour that isn't #rrggbb is ignored.
+  const setActiveItemEffect = useCallback(
+    (key: EffectKey | 'tintColor', value: number | string, final: boolean) => {
       if (!editor || !activeItem) return
-      const blurAmount = Math.min(MAX_BLUR, Math.max(0, Math.round(value)))
-      activeItem.set({ blurAmount } as never)
-      if (final) editor.commit('Blur')
+      if (key === 'tintColor') {
+        const tintColor = normaliseColor(value)
+        if (!tintColor) return
+        activeItem.set({ tintColor } as never)
+      } else {
+        activeItem.set({ [key]: clampEffect(key, value) } as never)
+      }
+      if (final) editor.commit(EFFECT_LABEL[key])
       else editor.canvas.requestRenderAll()
     },
     [activeItem, editor]
@@ -87,6 +93,6 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
     handleDeselectActiveObject,
     scaleActiveItemUpDown,
     rotateActiveItem,
-    setActiveItemBlur,
+    setActiveItemEffect,
   }
 }

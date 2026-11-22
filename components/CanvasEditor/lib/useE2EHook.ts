@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import { type Effects, canvasFiltersSupported, getEffects } from './objectEffects'
 import type { FabricJSEditor } from './useFabricJSEditor'
 import type { History } from './useHistory'
 import type { OpenFiles } from './useOpenFiles'
@@ -12,7 +13,15 @@ import type { Viewport } from './useViewport'
  */
 export type E2EHook = {
   /** Stack order, back to front. `center` is in artboard units. */
-  objects(): { type: string; text?: string; left: number; top: number; center: { x: number; y: number }; fill?: string }[]
+  objects(): {
+    type: string
+    text?: string
+    left: number
+    top: number
+    center: { x: number; y: number }
+    fill?: string
+    effects: Effects
+  }[]
   /** Stack indexes of the selected objects. */
   selection(): number[]
   background(): string
@@ -22,6 +31,8 @@ export type E2EHook = {
   fitted(): boolean
   activeFileId(): string | null
   ready(): boolean
+  /** Whether this browser applies canvas filters (effects render). */
+  filtersSupported(): boolean
 }
 
 export const E2E_GLOBAL = '__ALBUM_ARTWORK_E2E__'
@@ -51,6 +62,7 @@ export function useE2EHook({
           top: o.top,
           center: { x: o.getCenterPoint().x, y: o.getCenterPoint().y },
           fill: typeof o.fill === 'string' ? o.fill : undefined,
+          effects: getEffects(o),
         })),
       selection: () => {
         const canvas = latest.current.editor?.canvas
@@ -65,6 +77,7 @@ export function useE2EHook({
       fitted: () => latest.current.viewport.getView().fitted,
       activeFileId: () => latest.current.files.activeId,
       ready: () => latest.current.files.ready && !!latest.current.editor,
+      filtersSupported: canvasFiltersSupported,
     }
     Object.assign(window, { [E2E_GLOBAL]: hook })
     return () => {
