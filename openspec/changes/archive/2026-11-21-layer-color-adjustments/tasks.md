@@ -34,4 +34,4 @@
 - [x] 5.1 Update `CLAUDE.md` (Blur bullet → Effects: properties, filter order, tint offscreen path, "never name a custom property after a Fabric member"; Structure entry for `objectEffects.ts`; LayerActions description) and `docs/ARCHITECTURE.md` §1f; verify no remaining references with `grep -rn "objectBlur\|canvasBlurSupported" .` outside `openspec/changes/archive`
 - [x] 5.2 Add a `CHANGELOG.md` entry ("Brightness, contrast, saturation and tint for layers"); verify `/api/changelog` lists it in the dev server
 - [x] 5.3 Run `npm run typecheck`, `npm test`, `npm run build` and `npm run test:e2e`; verify all pass
-- [ ] 5.4 At archive: update the main `object-effects` spec's Purpose (blur plus colour adjustments, not "starting with blur"); verify `openspec validate --specs` passes
+- [x] 5.4 At archive: update the main `object-effects` spec's Purpose (blur plus colour adjustments, not "starting with blur"); verify `openspec validate --specs` passes
