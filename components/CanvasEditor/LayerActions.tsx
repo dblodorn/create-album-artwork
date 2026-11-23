@@ -1,6 +1,6 @@
 import type { FabricObject } from 'fabric'
 import { type KeyboardEvent, type SyntheticEvent, useCallback, useRef, useState } from 'react'
-import { Button, Popover, Slider, Text, View } from 'reshaped'
+import { Button, Popover, Slider, Switch, Text, View } from 'reshaped'
 
 import { Hint, Pill, mergeTriggerAttributes } from '@/design'
 
@@ -46,7 +46,7 @@ const releaseTriggerFocus = () => {
 
 /**
  * The selected layer's inline actions: a Transform popout (scale, rotate), an
- * Effects popout (blur; colour adjustments on non-text layers), Remove
+ * Effects popout (blur; colour adjustments, noise and dither on non-text layers), Remove
  * background on images, and Delete. No up/down buttons: reorder by dragging,
  * Alt+↑/↓, ⌘] / ⌘[ or the Edit menu.
  */
@@ -235,15 +235,16 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
   // Likewise the tint colour while the picker is open.
   const [picking, setPicking] = useState<string | null>(null)
   const effects = { ...getEffects(object), ...dragging, ...(picking ? { tintColor: picking } : {}) }
+  // Blur, the colour adjustments and tint need canvas filters; noise and dither don't.
   const supported = canvasFiltersSupported()
-  const slider = (key: EffectKey, caption: string, unit = '') => (
+  const slider = (key: EffectKey, caption: string, unit = '', disabled = !supported) => (
     <EffectSlider
       key={key}
       name={key}
       caption={caption}
       unit={unit}
       value={effects[key]}
-      disabled={!supported}
+      disabled={disabled}
       onChange={(value, final, merge) => {
         setDragging(({ [key]: _, ...rest }) => (final ? rest : { ...rest, [key]: value }))
         onEffect(key, value, final, merge)
@@ -267,11 +268,14 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
               }}
             />
           </View>
+          {slider('noiseAmount', 'Noise', '', false)}
+          <DitherSwitch checked={effects.ditherEnabled} onChange={(value) => onEffect('ditherEnabled', value, true)} />
+          {slider('ditherPixelSize', 'Pixel size', '', !effects.ditherEnabled)}
         </>
       )}
       {!supported && (
         <Text variant="caption-1" color="neutral-faded">
-          Effects aren't supported in this browser.
+          Blur and colour adjustments aren't supported in this browser.
         </Text>
       )}
     </View>
@@ -293,7 +297,7 @@ function EffectSlider({
   disabled: boolean
   onChange: (value: number, final: boolean, merge?: boolean) => void
 }) {
-  const { min, max } = EFFECT_RANGE[name]
+  const { min, max, neutral } = EFFECT_RANGE[name]
   return (
     // Reshaped labels the range input by its value tooltip, so the row names the control.
     <View gap={1} attributes={{ role: 'group', 'aria-label': caption }}>
@@ -302,10 +306,10 @@ function EffectSlider({
           {caption} · <span aria-live="polite">{`${value}${unit}`}</span>
         </Text>
         <Pill
-          disabled={value === 0 || disabled}
+          disabled={value === neutral || disabled}
           onClick={(e) => {
             keepFocusInPopout(e)
-            onChange(0, true)
+            onChange(neutral, true)
           }}
           attributes={{ 'aria-label': `Reset ${caption}` }}
         >
@@ -322,6 +326,35 @@ function EffectSlider({
         onChange={({ value }) => onChange(value, false)}
         onChangeCommit={({ value }) => onChange(value, true, true)}
       />
+    </View>
+  )
+}
+
+/** Dither on/off, with its own Reset (off); Pixel size is kept either way. */
+function DitherSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <View direction="row" justify="space-between" align="center">
+      <Switch
+        name="ditherEnabled"
+        size="small"
+        checked={checked}
+        inputAttributes={{ role: 'switch' }}
+        onChange={({ checked }) => onChange(checked)}
+      >
+        <Text variant="caption-1" color="neutral-faded">
+          Dither
+        </Text>
+      </Switch>
+      <Pill
+        disabled={!checked}
+        onClick={(e) => {
+          keepFocusInPopout(e)
+          onChange(false)
+        }}
+        attributes={{ 'aria-label': 'Reset Dither' }}
+      >
+        Reset
+      </Pill>
     </View>
   )
 }

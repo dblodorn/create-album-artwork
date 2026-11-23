@@ -92,7 +92,7 @@ The panel element never changes parent, so docking doesn't remount the Layers li
 
 ## 1c. Layers panel
 
-- **Inline actions** (`LayerActions`): the selected row (single selection only) shows a Transform popout (scale: the longer side ±1 unit, or ×1.1/×0.9 with Shift; rotate: ±1° about the centre, or ±15° with Shift, reset to 0°, with the current angle — `rotateActiveItem` → `commit('Rotate')`), an Effects popout (blur, plus brightness/contrast/saturation/tint on non-text layers, §1f), Remove background on images, and Delete. They replace the old Object panel; there are no arrange buttons. The slot stops pointer and key events from reaching the row (so no drag, re-select or row key handling), except Escape, so the popout can close. The popout renders in a portal, so its content carries `data-editor-shortcuts="off"` itself. When a popout closes, Reshaped returns focus to its trigger, which is inside the shortcuts-off panel; `onAfterClose` blurs the trigger (marked `data-layer-popout-trigger`) if focus is still on it, so ⌘Z and the other canvas shortcuts work straight away. All actions are disabled while drawing. The list scrolls in `.LayerScroll`, which is also dnd-kit's drag boundary.
+- **Inline actions** (`LayerActions`): the selected row (single selection only) shows a Transform popout (scale: the longer side ±1 unit, or ×1.1/×0.9 with Shift; rotate: ±1° about the centre, or ±15° with Shift, reset to 0°, with the current angle — `rotateActiveItem` → `commit('Rotate')`), an Effects popout (blur, plus brightness/contrast/saturation/tint, noise and dither on non-text layers, §1f), Remove background on images, and Delete. They replace the old Object panel; there are no arrange buttons. The slot stops pointer and key events from reaching the row (so no drag, re-select or row key handling), except Escape, so the popout can close. The popout renders in a portal, so its content carries `data-editor-shortcuts="off"` itself. When a popout closes, Reshaped returns focus to its trigger, which is inside the shortcuts-off panel; `onAfterClose` blurs the trigger (marked `data-layer-popout-trigger`) if focus is still on it, so ⌘Z and the other canvas shortcuts work straight away. All actions are disabled while drawing. The list scrolls in `.LayerScroll`, which is also dnd-kit's drag boundary.
 - **Source of truth is `canvas.getObjects()`.** `useCanvasLayers` keeps no copy: on any change it schedules one `requestAnimationFrame` rebuild that reverses the object list (front first) and derives each row's label (`layerLabel`) and kind. A scene load fires one remove/add per object, and the batch turns that into a single rebuild.
 - **Fabric fires nothing for z-order changes** (`moveObjectTo`, `bringObjectToFront`… only re-render). So the editor exposes `subscribe()`, which `commit()` notifies, and every z-order or property change that already calls `commit()` reaches the panel. The hook also listens to `object:added/removed/modified`, `text:changed` and the selection events.
 - **Row ids are session-only** (`layerIds.ts`, a `WeakMap`), so nothing is added to the scene and the save format is unchanged.
@@ -157,20 +157,49 @@ Selected objects can be rotated from Fabric's top handle (`mtr`) or by dragging 
 
 ## 1f. Effects (Effects popout)
 
-Every object carries five effects as custom properties: `blurAmount` (artboard units, 0–50), `brightnessAmount`, `contrastAmount` and `saturationAmount` (−100…100), and `tintAmount` (0–100 %) with `tintColor` (`#rrggbb`). All are neutral at 0. `lib/objectEffects.ts` adds them to `BaseFabricObject.customProperties` and puts the neutral values on the prototype, so they serialise with the scene, undo snapshots, clones (paste) and JSON, including "no effect". None is named after a Fabric member: Fabric's text classes already have a `blur()` method, and a property called `blur` once put a function into the scene. `getEffects(obj)` reads them back, clamped, with neutral values for anything missing or invalid, so older scenes load unchanged.
+Every object carries its effects as custom properties:
+- `blurAmount` (artboard units, 0–50);
+- `brightnessAmount`, `contrastAmount` and `saturationAmount` (−100…100);
+- `tintAmount` (0–100 %) with `tintColor` (`#rrggbb`);
+- `noiseAmount` (0–100);
+- `ditherEnabled` (boolean) with `ditherPixelSize` (artboard units per bitmap pixel, 1–8).
 
-Rendering wraps the base `render` (text, images, paths and shapes all reach it):
-- **Filters:** `filterString` builds `brightness(1 + b/100) contrast(1 + c/100) saturate(1 + s/100) blur(r)`, skipping neutral functions. So +100 doubles, −100 is black, flat grey or greyscale, and blur comes last so it softens the adjusted pixels. The blur radius is `blurAmount × hypot(a, b)` from the context transform at entry. That transform is zoom × backing scale on screen and the multiplier during `toCanvasElement`, so effects look the same at any zoom and in the 3000 px export. The filter applies as the object's cache bitmap is drawn, so effects never invalidate the cache and blur spreads past the object's edges. Selection controls are on the top canvas and stay unaffected.
-- **Tint** isn't a filter function. When `tintAmount > 0`, `renderTinted`:
-  1. works out the object's box in device pixels (`tintBox`: its own bounds plus shadow, through the context × own matrix, plus 3 × the blur radius, clipped to the canvas);
-  2. renders the object there into a reused offscreen canvas, with the brightness/contrast/saturation filter;
-  3. makes a copy in its shading × the tint colour (`grayscale(1)`, a `multiply` fill, then `destination-in` with the layer for its alpha, so transparent areas stay clear);
-  4. mixes the copy into the layer by the strength with `source-atop`, which keeps the layer's alpha so the mix is exact on soft edges;
-  5. draws the result once, blurred, at the box.
+Each has a neutral value in `EFFECT_RANGE`: 0, `false`, and 2 for Pixel size (2 puts about 500 bitmap pixels across the artboard, close to an original Mac screen). `lib/objectEffects.ts` adds them to `BaseFabricObject.customProperties` and puts the neutral values on the prototype. That way they serialise with the scene, undo snapshots, clones (paste) and JSON, including "no effect". None is named after a Fabric member: Fabric's text classes already have a `blur()` method, and a property called `blur` once put a function into the scene. `getEffects(obj)` reads them back, clamped, with neutral values for anything missing or invalid, so older scenes load unchanged. `hasEffects` ignores Pixel size unless Dither is on.
 
-`canvasFiltersSupported()` feature-detects `ctx.filter` with a blur probe. Without it, objects render unadjusted, the values are kept, and the popout disables its controls with a note. Playwright's WebKit lacks it, so the e2e suite runs the interactive effects tests in Chromium and the unsupported one in WebKit.
+Rendering wraps the base `render` (text, images, paths and shapes all reach it). The order is brightness/contrast/saturation → noise → dither → tint → blur.
+- **Filters only** (blur and the colour adjustments): `filterString` builds `brightness(1 + b/100) contrast(1 + c/100) saturate(1 + s/100) blur(r)`, skipping neutral functions.
+  - +100 doubles; −100 is black, flat grey or greyscale.
+  - Blur comes last, so it softens the adjusted pixels. Its radius is `blurAmount × hypot(a, b)` from the context transform at entry. That transform is zoom × backing scale on screen and the multiplier during `toCanvasElement`, so effects look the same at any zoom and in the 3000 px export.
+  - The filter applies as the object's cache bitmap is drawn, so these effects never invalidate the cache, and blur spreads past the object's edges.
+  - Selection controls are on the top canvas and stay unaffected.
+- **Tint, noise and dither** aren't filter functions. `renderLayered` composes the layer offscreen and draws it once:
+  1. It works out a box in device pixels (`tintBox`) and renders the source into a reused offscreen canvas. The box covers the object's bounds plus shadow (or, for noise and dither, the layer's local frame), through the context transform, plus 3 × the blur radius, clipped to the canvas. The source is either the dithered bitmap or the object rendered under the brightness/contrast/saturation filter.
+  2. **Noise without dither:** a grey texture (one opaque pixel per artboard unit, `128 + noise(x, y) × 127`, cached per size) is blended over a copy with `overlay` at `amount / 100`. It is placed in the layer's local frame with smoothing off, so the grain is stable, follows the layer and scales with zoom, while the layer itself keeps full resolution.
+  3. **Tint:** a copy is made in the layer's shading × the tint colour (`grayscale(1)`, then a `multiply` fill).
+  4. Each copy is masked to the source with `destination-in`, then mixed back with `source-atop` (noise at full strength, tint by its strength). This keeps the source's alpha, so transparent areas stay clear and the mix is exact on soft edges.
+  5. The result is drawn once, blurred, at the box, with the object's composite operation.
+- **Dither** (`ditherBitmap`):
+  - The object is rendered into a small canvas in its *local frame*: centred, turned with it, one canvas pixel per Pixel size, grown so no side passes 2048. It is drawn with its opacity at 1 (opacity applies when the bitmap is drawn back) and under the colour-adjustment filter, so Brightness and Contrast act as the threshold.
+  - Then `getImageData` → `addNoise` (per cell, before dithering, for stipple) → `atkinson` → `putImageData`. `atkinson` uses Rec. 709 luminance against 128 and gives 1/8 of the error to each of six neighbours; the dropped 2/8 gives MacPaint's blown-out highlights. Alpha ≥ 128 becomes opaque black or white, and anything fainter becomes transparent.
+  - `drawInFrame` draws it back with `imageSmoothingEnabled = false`. The cells stay square at any zoom and in the export, move and rotate with the layer, and keep their size on the artboard when it's scaled.
+  - The bitmap is cached per object in a `WeakMap`. Its key covers the adjustments, noise, cell size, grid size, scale, skew, flip, shadow, the image `src`, and a content version that the wrap bumps whenever it sees `object.dirty` before rendering (Fabric sets it for fill, path and src changes). Moving, rotating, selecting or zooming never re-dithers.
+  - A tainted canvas (an image without CORS headers) makes `getImageData` throw. That layer then renders without dither.
+- `noise(x, y)` is an integer hash of the cell coordinates with a fixed seed. Every layer shares the field in its own coordinates, so grain is the same across redraws, reloads and browsers.
 
-The popout (`LayerActions` → `EffectsControls`) shows Blur for every layer, and Brightness, Contrast, Saturation and Tint (a strength slider plus a colour input) for layers that aren't text. Each row has its own Reset, disabled at neutral; Tint's Reset only zeroes the strength, so the colour is kept. Sliders call `setActiveItemEffect(key, value, false)` live (render only, with the mid-drag value held in local state) and `(key, value, true)` on release, which runs `commit(EFFECT_LABEL[key])`. The colour is live on `input` and commits "Tint" on the native `change`. `CanvasEditor` tags slider commits with `history.markMerge(label)`, so a run of arrow-key steps within 1 s is one undo step, the way nudges are. Resets and colour picks never merge.
+`canvasFiltersSupported()` feature-detects `ctx.filter` with a blur probe. Without it, blur, the colour adjustments and tint are skipped (their values are kept), and the popout disables those controls with a note. Noise and dither only need `getImageData` and composite operations, so they still render, and their controls stay enabled. Playwright's WebKit lacks canvas filters, so:
+- the e2e suite runs the filter-based interactive tests in Chromium and the unsupported one in WebKit;
+- the noise and dither tests run in both.
+
+The popout (`LayerActions` → `EffectsControls`) shows Blur for every layer. Layers that aren't text also get:
+- Brightness, Contrast and Saturation;
+- Tint (a strength slider plus a colour input);
+- Noise;
+- a Dither switch (`role="switch"`);
+- Pixel size, disabled while Dither is off.
+
+Each row has its own Reset, disabled at neutral. Tint's Reset only zeroes the strength, so the colour is kept; Dither's Reset only switches it off, so Pixel size is kept.
+
+Sliders call `setActiveItemEffect(key, value, false)` live (render only, with the mid-drag value held in local state) and `(key, value, true)` on release, which runs `commit(EFFECT_LABEL[key])`. The colour is live on `input` and commits "Tint" on the native `change`. The Dither switch commits "Dither" at once. `CanvasEditor` tags slider commits with `history.markMerge(label)`, so a run of arrow-key steps within 1 s is one undo step, the way nudges are. Resets, colour picks and the switch never merge.
 
 ## 1g. Visual language and colour mode (`design/`)
 

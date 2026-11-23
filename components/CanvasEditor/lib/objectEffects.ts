@@ -1,49 +1,70 @@
 import { BaseFabricObject, type FabricObject, type TMat2D, util } from 'fabric'
 
 /*
- * Effects for any layer: blur, brightness, contrast, saturation and tint. Each
- * is a custom object property (named `…Amount`, never after a Fabric member:
- * text objects have a `blur()` method) serialised with the scene. Rendering
- * wraps Fabric's base `render` with the canvas 2D `filter`, which applies as
- * the object's cache bitmap is drawn, so effects never invalidate the cache,
- * blur spreads past the object's edges, and everything scales with the context
- * (same at any zoom and in the export). Tint isn't a filter function, so a
- * tinted object goes through two offscreen canvases (see `renderTinted`).
- * Browsers without canvas filters render unadjusted; the values are kept.
+ * Effects for any layer: blur, brightness, contrast, saturation, tint, noise
+ * and a 1-bit dither. Each is a custom object property (never named after a
+ * Fabric member: text objects have a `blur()` method) serialised with the
+ * scene. Rendering wraps Fabric's base `render`. Blur and the colour
+ * adjustments alone use the canvas 2D `filter`, which applies as the object's
+ * cache bitmap is drawn, so they never invalidate the cache, blur spreads past
+ * the object's edges, and everything scales with the context (same at any zoom
+ * and in the export). Tint, noise and dither aren't filter functions, so those
+ * layers go through offscreen canvases (see `renderLayered`), in the order
+ * adjustments → noise → dither → tint → blur. Browsers without canvas filters
+ * skip blur, the adjustments and tint (the values are kept); noise and dither
+ * only need pixel access and compositing, so they work there too.
  */
 
 export const MAX_BLUR = 50
 
-export type EffectKey = 'blurAmount' | 'brightnessAmount' | 'contrastAmount' | 'saturationAmount' | 'tintAmount'
+export type EffectKey =
+  | 'blurAmount'
+  | 'brightnessAmount'
+  | 'contrastAmount'
+  | 'saturationAmount'
+  | 'tintAmount'
+  | 'noiseAmount'
+  | 'ditherPixelSize'
 
-export type Effects = Record<EffectKey, number> & { tintColor: string }
+export type Effects = Record<EffectKey, number> & { tintColor: string; ditherEnabled: boolean }
 
 /**
  * Sets one effect; `final` (once per drag, and for Reset) records the undo
  * step. `merge` (slider commits only) lets quick runs of arrow-key presses
- * become one step; Reset and colour picks are always their own.
+ * become one step; Reset, colour picks and the Dither switch are always their own.
  */
-export type OnEffect = (key: EffectKey | 'tintColor', value: number | string, final: boolean, merge?: boolean) => void
+export type OnEffect = (
+  key: EffectKey | 'tintColor' | 'ditherEnabled',
+  value: number | string | boolean,
+  final: boolean,
+  merge?: boolean
+) => void
 
-/** Slider range per effect; every effect is neutral at 0. */
-export const EFFECT_RANGE: Record<EffectKey, { min: number; max: number }> = {
-  blurAmount: { min: 0, max: MAX_BLUR },
-  brightnessAmount: { min: -100, max: 100 },
-  contrastAmount: { min: -100, max: 100 },
-  saturationAmount: { min: -100, max: 100 },
-  tintAmount: { min: 0, max: 100 },
+/** Slider range and neutral value per effect. */
+export const EFFECT_RANGE: Record<EffectKey, { min: number; max: number; neutral: number }> = {
+  blurAmount: { min: 0, max: MAX_BLUR, neutral: 0 },
+  brightnessAmount: { min: -100, max: 100, neutral: 0 },
+  contrastAmount: { min: -100, max: 100, neutral: 0 },
+  saturationAmount: { min: -100, max: 100, neutral: 0 },
+  tintAmount: { min: 0, max: 100, neutral: 0 },
+  noiseAmount: { min: 0, max: 100, neutral: 0 },
+  // Artboard units per bitmap pixel; 2 puts ~500 across the artboard, about an original Mac screen.
+  ditherPixelSize: { min: 1, max: 8, neutral: 2 },
 }
 
 export const EFFECT_KEYS = Object.keys(EFFECT_RANGE) as EffectKey[]
 
 /** The undo step's name; also the history merge key, lowercased. */
-export const EFFECT_LABEL: Record<EffectKey | 'tintColor', string> = {
+export const EFFECT_LABEL: Record<EffectKey | 'tintColor' | 'ditherEnabled', string> = {
   blurAmount: 'Blur',
   brightnessAmount: 'Brightness',
   contrastAmount: 'Contrast',
   saturationAmount: 'Saturation',
   tintAmount: 'Tint',
   tintColor: 'Tint',
+  noiseAmount: 'Noise',
+  ditherEnabled: 'Dither',
+  ditherPixelSize: 'Pixel size',
 }
 
 /** Red, so a first raise of Strength shows a visible tint. */
@@ -56,12 +77,15 @@ export const NEUTRAL_EFFECTS: Effects = {
   saturationAmount: 0,
   tintAmount: 0,
   tintColor: DEFAULT_TINT,
+  noiseAmount: 0,
+  ditherEnabled: false,
+  ditherPixelSize: EFFECT_RANGE.ditherPixelSize.neutral,
 }
 
-/** A whole number within the effect's range; 0 for anything that isn't a finite number. */
+/** A whole number within the effect's range; its neutral value for anything that isn't a finite number. */
 export function clampEffect(key: EffectKey, value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 0
-  const { min, max } = EFFECT_RANGE[key]
+  const { min, max, neutral } = EFFECT_RANGE[key]
+  if (typeof value !== 'number' || !Number.isFinite(value)) return neutral
   return Math.min(max, Math.max(min, Math.round(value))) || 0
 }
 
@@ -76,12 +100,18 @@ export function getEffects(object: unknown): Effects {
   const effects = { ...NEUTRAL_EFFECTS }
   for (const key of EFFECT_KEYS) effects[key] = clampEffect(key, source[key])
   effects.tintColor = normaliseColor(source.tintColor) ?? DEFAULT_TINT
+  effects.ditherEnabled = source.ditherEnabled === true
   return effects
 }
 
 export const getBlur = (object: unknown): number => getEffects(object).blurAmount
 
-export const hasEffects = (e: Effects) => EFFECT_KEYS.some((key) => e[key] !== 0)
+/** Whether anything changes how the layer looks. Pixel size alone doesn't: it only matters while dithering. */
+export const hasEffects = (e: Effects) =>
+  e.ditherEnabled || EFFECT_KEYS.some((key) => key !== 'ditherPixelSize' && e[key] !== EFFECT_RANGE[key].neutral)
+
+/** Whether the effects need pixel work (noise or dither) rather than filters alone. */
+const needsPixels = (e: Effects) => e.ditherEnabled || e.noiseAmount > 0
 
 type MatrixLike = { a: number; b: number }
 
@@ -175,7 +205,83 @@ export function setFiltersSupportedForTests(value: boolean | null) {
   supported = value
 }
 
-// Reused between frames: the adjusted object, and its tinted copy.
+const SEED = 0x5f3759df
+
+/**
+ * The grain field: a value in −1…1 for each whole cell, from an integer hash
+ * of its coordinates. Deterministic, so grain never shimmers between redraws,
+ * reloads or browsers.
+ */
+export function noise(x: number, y: number): number {
+  let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ SEED
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d)
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39)
+  h ^= h >>> 15
+  return ((h >>> 0) / 0xffffffff) * 2 - 1
+}
+
+/** Adds monochrome grain to an RGBA buffer in place, one cell per pixel; alpha is untouched. */
+export function addNoise(data: Uint8ClampedArray, width: number, height: number, amount: number) {
+  if (!(amount > 0)) return
+  const scale = amount * 1.28
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4
+      if (data[i + 3] === 0) continue
+      const d = noise(x, y) * scale
+      data[i] += d
+      data[i + 1] += d
+      data[i + 2] += d
+    }
+  }
+}
+
+// Atkinson's six neighbours, each taking 1/8 of the error (the other 2/8 is
+// dropped, which gives the blown-out highlights of MacPaint).
+const ATKINSON: [number, number][] = [
+  [1, 0],
+  [2, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
+  [0, 2],
+]
+
+/**
+ * 1-bit Atkinson dither of an RGBA buffer in place. Pixels with alpha ≥ 128
+ * become opaque black or white (Rec. 709 luminance against 128); the rest
+ * become transparent and take no error.
+ */
+export function atkinson(data: Uint8ClampedArray, width: number, height: number) {
+  const lum = new Float32Array(width * height)
+  for (let i = 0; i < lum.length; i++) {
+    const p = i * 4
+    lum[i] = data[p + 3] >= 128 ? 0.2126 * data[p] + 0.7152 * data[p + 1] + 0.0722 * data[p + 2] : Number.NaN
+  }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x
+      const p = i * 4
+      const old = lum[i]
+      if (Number.isNaN(old)) {
+        data[p + 3] = 0
+        continue
+      }
+      const value = old < 128 ? 0 : 255
+      data[p] = data[p + 1] = data[p + 2] = value
+      data[p + 3] = 255
+      const error = (old - value) / 8
+      for (const [dx, dy] of ATKINSON) {
+        const nx = x + dx
+        const ny = y + dy
+        if (nx < 0 || nx >= width || ny >= height) continue
+        lum[ny * width + nx] += error
+      }
+    }
+  }
+}
+
+// Reused between frames: the layer being composed, and a working copy (tint, noise).
 let layers: [HTMLCanvasElement, HTMLCanvasElement] | null = null
 
 function layer(index: 0 | 1, box: Box) {
@@ -197,66 +303,240 @@ function shadowReach(object: FabricObject) {
   return s ? Math.abs(s.offsetX) + Math.abs(s.offsetY) + s.blur : 0
 }
 
+/** Largest side, in cells, of a dither bitmap or noise texture. */
+const MAX_CELLS = 2048
+
 /**
- * Tint: render the object (with brightness/contrast/saturation) into an
- * offscreen layer, make a copy in the object's shading × the tint colour with
- * its own alpha (so transparent areas stay clear), mix the copy into the layer
- * by the tint strength, and draw the result, blurred, onto the canvas.
+ * The layer's own frame: centred on the object and turned with it, but not
+ * scaled, so one unit is one artboard unit. `size` is the scaled object plus
+ * its shadow; `cell` is artboard units per bitmap pixel (grown if the grid
+ * would pass MAX_CELLS).
  */
-function renderTinted(
+function localFrame(object: FabricObject, cellSize: number) {
+  const center = object.getRelativeCenterPoint()
+  const placement = util.multiplyTransformMatrices(
+    [1, 0, 0, 1, center.x, center.y],
+    util.createRotateMatrix({ angle: object.angle })
+  )
+  const dims = object._getTransformedDimensions()
+  const reach = shadowReach(object) * Math.max(Math.abs(object.scaleX), Math.abs(object.scaleY))
+  const width = dims.x + 2 * reach
+  const height = dims.y + 2 * reach
+  const cell = Math.max(cellSize, width / MAX_CELLS, height / MAX_CELLS)
+  const cols = Math.max(1, Math.ceil(width / cell))
+  const rows = Math.max(1, Math.ceil(height / cell))
+  return { placement, cell, cols, rows, width: cols * cell, height: rows * cell }
+}
+
+type Frame = ReturnType<typeof localFrame>
+
+// Per object: the dithered bitmap and the noise texture, each with the key it was made for.
+type Cached = { key: string; canvas: HTMLCanvasElement }
+const cache = new WeakMap<FabricObject, { dither?: Cached; noise?: Cached }>()
+// Bumped whenever Fabric marks an object's content changed (fill, path, image…).
+const versions = new WeakMap<FabricObject, number>()
+
+const cacheOf = (object: FabricObject) => {
+  let entry = cache.get(object)
+  if (!entry) cache.set(object, (entry = {}))
+  return entry
+}
+
+/** Tests only: how many times the dither pass has run. */
+export const ditherRuns = { count: 0 }
+
+/**
+ * The layer as a 1-bit bitmap in its own frame, one canvas pixel per cell:
+ * rendered small with the colour adjustments, then grain, then Atkinson.
+ * Cached until anything it depends on changes (not position, angle or zoom).
+ * Null when the pixels can't be read (a tainted canvas).
+ */
+function ditherBitmap(object: FabricObject, e: Effects, frame: Frame, filters: boolean, render: Render) {
+  const src = (object as { getSrc?: () => string }).getSrc?.() ?? ''
+  const key = [
+    filters ? adjustFilter(e) : '',
+    e.noiseAmount,
+    frame.cell,
+    frame.cols,
+    frame.rows,
+    object.scaleX,
+    object.scaleY,
+    object.skewX,
+    object.skewY,
+    object.flipX,
+    object.flipY,
+    JSON.stringify(object.shadow ?? null),
+    versions.get(object) ?? 0,
+    src.length,
+    src.slice(-64),
+  ].join('|')
+  const entry = cacheOf(object)
+  if (entry.dither?.key === key) return entry.dither.canvas
+
+  const canvas = entry.dither?.canvas ?? document.createElement('canvas')
+  canvas.width = frame.cols
+  canvas.height = frame.rows
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  // Local frame → bitmap pixels, undoing the object's placement so Fabric's
+  // own matrix only adds its scale, skew and flip.
+  const toPixels = util.multiplyTransformMatrices(
+    [1 / frame.cell, 0, 0, 1 / frame.cell, frame.width / 2 / frame.cell, frame.height / 2 / frame.cell],
+    util.invertTransform(frame.placement)
+  )
+  ctx.setTransform(...toPixels)
+  ctx.filter = (filters && adjustFilter(e)) || 'none'
+  // Opacity is applied when the bitmap is drawn; here it would push pixels under the alpha threshold.
+  const opacity = object.opacity
+  object.opacity = 1
+  try {
+    render.call(object, ctx)
+  } finally {
+    object.opacity = opacity
+  }
+  ctx.filter = 'none'
+  try {
+    const image = ctx.getImageData(0, 0, frame.cols, frame.rows)
+    addNoise(image.data, frame.cols, frame.rows, e.noiseAmount)
+    atkinson(image.data, frame.cols, frame.rows)
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.putImageData(image, 0, 0)
+  } catch {
+    entry.dither = undefined
+    return null
+  }
+  ditherRuns.count++
+  entry.dither = { key, canvas }
+  return canvas
+}
+
+/** Grey grain, one opaque pixel per cell (128 ± 127); cached per size, the amount is applied as alpha. */
+function noiseTexture(object: FabricObject, frame: Frame) {
+  const key = `${frame.cols}x${frame.rows}`
+  const entry = cacheOf(object)
+  if (entry.noise?.key === key) return entry.noise.canvas
+  const canvas = entry.noise?.canvas ?? document.createElement('canvas')
+  canvas.width = frame.cols
+  canvas.height = frame.rows
+  const ctx = canvas.getContext('2d')!
+  const image = ctx.createImageData(frame.cols, frame.rows)
+  for (let y = 0; y < frame.rows; y++) {
+    for (let x = 0; x < frame.cols; x++) {
+      const i = (y * frame.cols + x) * 4
+      image.data[i] = image.data[i + 1] = image.data[i + 2] = 128 + noise(x, y) * 127
+      image.data[i + 3] = 255
+    }
+  }
+  ctx.putImageData(image, 0, 0)
+  entry.noise = { key, canvas }
+  return canvas
+}
+
+/** Draws a frame-sized bitmap onto `ctx` (whose transform is the parent's) in the object's frame, pixels kept square. */
+function drawInFrame(ctx: CanvasRenderingContext2D, bitmap: HTMLCanvasElement, frame: Frame) {
+  ctx.save()
+  ctx.transform(...frame.placement)
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(bitmap, -frame.width / 2, -frame.height / 2, frame.width, frame.height)
+  ctx.restore()
+}
+
+type Render = (ctx: CanvasRenderingContext2D) => void
+
+/**
+ * Tint, noise and dither: compose the layer offscreen in a box of device
+ * pixels, then draw it onto the canvas once (blurred, with the object's
+ * composite operation). In order:
+ * 1. the source: the dithered bitmap, or the object rendered with brightness/contrast/saturation;
+ * 2. noise without dither: grey grain blended in with `overlay`, in the object's frame;
+ * 3. tint: a copy in the object's shading × the tint colour, mixed in by strength;
+ * Steps 2 and 3 build the copy in the second layer, mask it to the source's
+ * alpha (`destination-in`) and mix it back with `source-atop`, so transparent
+ * areas stay clear and soft edges keep their alpha.
+ */
+function renderLayered(
   object: FabricObject,
   ctx: CanvasRenderingContext2D,
   e: Effects,
-  render: (ctx: CanvasRenderingContext2D) => void
+  render: Render,
+  filters: boolean
 ) {
   const t = ctx.getTransform()
   const parent: TMat2D = [t.a, t.b, t.c, t.d, t.e, t.f]
-  const matrix = util.multiplyTransformMatrices(parent, object.calcOwnMatrix())
-  const size = object._getNonTransformedDimensions()
-  const reach = shadowReach(object)
-  const box = tintBox(
-    size.x / 2 + reach,
-    size.y / 2 + reach,
-    matrix,
-    3 * blurRadius(e.blurAmount, t),
-    ctx.canvas.width,
-    ctx.canvas.height
-  )
+  const margin = filters ? 3 * blurRadius(e.blurAmount, t) : 0
+  const frame = needsPixels(e) ? localFrame(object, e.ditherEnabled ? e.ditherPixelSize : 1) : null
+  const bitmap = e.ditherEnabled && frame ? ditherBitmap(object, e, frame, filters, render) : null
+
+  let box: Box | null
+  if (frame) {
+    box = tintBox(frame.width / 2, frame.height / 2, util.multiplyTransformMatrices(parent, frame.placement), margin, ctx.canvas.width, ctx.canvas.height)
+  } else {
+    const size = object._getNonTransformedDimensions()
+    const reach = shadowReach(object)
+    const matrix = util.multiplyTransformMatrices(parent, object.calcOwnMatrix())
+    box = tintBox(size.x / 2 + reach, size.y / 2 + reach, matrix, margin, ctx.canvas.width, ctx.canvas.height)
+  }
   if (!box) return
-
-  const adjusted = layer(0, box)
-  adjusted.ctx.setTransform(t.a, t.b, t.c, t.d, t.e - box.x, t.f - box.y)
-  adjusted.ctx.filter = adjustFilter(e) || 'none'
-  render.call(object, adjusted.ctx)
-  adjusted.ctx.filter = 'none'
-
-  const tinted = layer(1, box)
   const w = box.width
   const h = box.height
-  tinted.ctx.filter = 'grayscale(1)'
-  tinted.ctx.drawImage(adjusted.canvas, 0, 0, w, h, 0, 0, w, h)
-  tinted.ctx.filter = 'none'
-  tinted.ctx.globalCompositeOperation = 'multiply'
-  tinted.ctx.fillStyle = e.tintColor
-  tinted.ctx.fillRect(0, 0, w, h)
-  tinted.ctx.globalCompositeOperation = 'destination-in'
-  tinted.ctx.drawImage(adjusted.canvas, 0, 0, w, h, 0, 0, w, h)
-  tinted.ctx.globalCompositeOperation = 'source-over'
+  const shifted: TMat2D = [t.a, t.b, t.c, t.d, t.e - box.x, t.f - box.y]
 
-  // Mix the tinted copy into the adjusted layer by the strength. `source-atop`
-  // keeps the layer's own alpha, so the mix is exact on soft edges too.
-  adjusted.ctx.setTransform(1, 0, 0, 1, 0, 0)
-  adjusted.ctx.globalCompositeOperation = 'source-atop'
-  adjusted.ctx.globalAlpha = e.tintAmount / 100
-  adjusted.ctx.drawImage(tinted.canvas, 0, 0, w, h, 0, 0, w, h)
-  adjusted.ctx.globalAlpha = 1
-  adjusted.ctx.globalCompositeOperation = 'source-over'
+  const source = layer(0, box)
+  source.ctx.setTransform(...shifted)
+  if (bitmap && frame) {
+    source.ctx.globalAlpha = object.opacity
+    drawInFrame(source.ctx, bitmap, frame)
+    source.ctx.globalAlpha = 1
+  } else {
+    source.ctx.filter = (filters && adjustFilter(e)) || 'none'
+    render.call(object, source.ctx)
+    source.ctx.filter = 'none'
+  }
+
+  const mixIn = (paint: (copy: CanvasRenderingContext2D) => void, strength: number) => {
+    const copy = layer(1, box)
+    paint(copy.ctx)
+    copy.ctx.setTransform(1, 0, 0, 1, 0, 0)
+    copy.ctx.globalCompositeOperation = 'destination-in'
+    copy.ctx.drawImage(source.canvas, 0, 0, w, h, 0, 0, w, h)
+    copy.ctx.globalCompositeOperation = 'source-over'
+    source.ctx.setTransform(1, 0, 0, 1, 0, 0)
+    source.ctx.globalCompositeOperation = 'source-atop'
+    source.ctx.globalAlpha = strength
+    source.ctx.drawImage(copy.canvas, 0, 0, w, h, 0, 0, w, h)
+    source.ctx.globalAlpha = 1
+    source.ctx.globalCompositeOperation = 'source-over'
+  }
+
+  if (frame && !e.ditherEnabled && e.noiseAmount > 0) {
+    const texture = noiseTexture(object, frame)
+    mixIn((copy) => {
+      copy.drawImage(source.canvas, 0, 0, w, h, 0, 0, w, h)
+      copy.setTransform(...shifted)
+      copy.globalCompositeOperation = 'overlay'
+      copy.globalAlpha = e.noiseAmount / 100
+      drawInFrame(copy, texture, frame)
+      copy.globalAlpha = 1
+      copy.globalCompositeOperation = 'source-over'
+    }, 1)
+  }
+
+  if (filters && e.tintAmount > 0) {
+    mixIn((copy) => {
+      copy.filter = 'grayscale(1)'
+      copy.drawImage(source.canvas, 0, 0, w, h, 0, 0, w, h)
+      copy.filter = 'none'
+      copy.globalCompositeOperation = 'multiply'
+      copy.fillStyle = e.tintColor
+      copy.fillRect(0, 0, w, h)
+      copy.globalCompositeOperation = 'source-over'
+    }, e.tintAmount / 100)
+  }
 
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
-  ctx.filter = blurFilter(e, t) || 'none'
+  ctx.filter = (filters && blurFilter(e, t)) || 'none'
   ctx.globalCompositeOperation = object.globalCompositeOperation
-  ctx.drawImage(adjusted.canvas, 0, 0, w, h, box.x, box.y, w, h)
+  ctx.drawImage(source.canvas, 0, 0, w, h, box.x, box.y, w, h)
   ctx.restore()
 }
 
@@ -268,20 +548,22 @@ export function installObjectEffects() {
   installed = true
 
   const Base = BaseFabricObject as unknown as { customProperties: string[] }
-  const props = [...EFFECT_KEYS, 'tintColor']
+  const props = [...EFFECT_KEYS, 'tintColor', 'ditherEnabled']
   Base.customProperties = [...Base.customProperties, ...props.filter((p) => !Base.customProperties.includes(p))]
 
-  const proto = BaseFabricObject.prototype as unknown as Effects & {
-    render: (ctx: CanvasRenderingContext2D) => void
-  }
+  const proto = BaseFabricObject.prototype as unknown as Effects & { render: Render }
   // Defaults on the prototype mean every object serialises every effect
   // (neutral when unset), so undo snapshots can restore "no effect" too.
   Object.assign(proto, NEUTRAL_EFFECTS)
   const render = proto.render
   proto.render = function (this: FabricObject, ctx: CanvasRenderingContext2D) {
+    // Read before the base render clears it: the dither bitmap is stale.
+    if (this.dirty) versions.set(this, (versions.get(this) ?? 0) + 1)
     const e = getEffects(this)
-    if (!hasEffects(e) || !canvasFiltersSupported()) return render.call(this, ctx)
-    if (e.tintAmount > 0) return renderTinted(this, ctx, e, render)
+    if (!hasEffects(e) || this.isNotVisible()) return render.call(this, ctx)
+    const filters = canvasFiltersSupported()
+    if (needsPixels(e) || (filters && e.tintAmount > 0)) return renderLayered(this, ctx, e, render, filters)
+    if (!filters) return render.call(this, ctx)
     ctx.save()
     ctx.filter = filterString(e, ctx.getTransform())
     try {

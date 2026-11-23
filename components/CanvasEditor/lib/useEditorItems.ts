@@ -68,11 +68,14 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
   )
 
   // Live while dragging (no history step), committed once at the end. A
-  // colour that isn't #rrggbb is ignored.
+  // colour that isn't #rrggbb, or a Dither value that isn't a boolean, is ignored.
   const setActiveItemEffect = useCallback(
-    (key: EffectKey | 'tintColor', value: number | string, final: boolean) => {
+    (key: EffectKey | 'tintColor' | 'ditherEnabled', value: number | string | boolean, final: boolean) => {
       if (!editor || !activeItem) return
-      if (key === 'tintColor') {
+      if (key === 'ditherEnabled') {
+        if (typeof value !== 'boolean') return
+        activeItem.set({ ditherEnabled: value } as never)
+      } else if (key === 'tintColor') {
         const tintColor = normaliseColor(value)
         if (!tintColor) return
         activeItem.set({ tintColor } as never)
