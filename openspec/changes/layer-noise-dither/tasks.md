@@ -1,0 +1,37 @@
+# Tasks
+
+## 1. Effects module: properties
+
+- [x] 1.1 Add `noiseAmount` (0–100, neutral 0) and `ditherPixelSize` (1–8, neutral 2) to `EFFECT_RANGE` with a `neutral` per key; make `clampEffect` fall back to the key's neutral and `hasEffects` compare against it, with Pixel size counting only while Dither is on; add `ditherEnabled` (boolean, neutral `false`) handled like `tintColor`; extend `Effects`, `NEUTRAL_EFFECTS`, `EFFECT_LABEL` ("Noise", "Dither", "Pixel size") and `OnEffect` (`number | string | boolean`); register all three in `customProperties` with prototype defaults; verify unit tests: a new `Rect`'s `toObject()` carries them at neutral, `clone()` keeps set values, invalid input (out of range, non-numeric, non-boolean) reads neutral, and a lone non-default Pixel size isn't an effect
+- [x] 1.2 Implement pure `noise(cx, cy)` (32-bit integer hash, fixed seed, −1…1); verify unit tests that it's deterministic, stays in range, and averages close to 0 over a 256×256 grid
+- [x] 1.3 Implement pure `atkinson(data, w, h)` on RGBA buffers (Rec. 709 luminance, threshold 128, 1/8 to six neighbours, alpha ≥ 128 → opaque black/white, else alpha 0 and skipped); verify unit tests on small known buffers: flat 50% grey gives a mix of black and white, pure white and black stay unchanged, mid-tones come out lighter than a plain threshold (the dropped 2/8), and transparent pixels stay transparent and take no error
+- [x] 1.4 Implement pure `addNoise(data, w, h, amount)` (one cell per pixel; the bitmap's origin is the layer's corner, so no offset is needed) (RGB `+ noise · amount · 1.28`, alpha untouched); verify unit tests that amount 0 leaves the buffer unchanged and the same input always gives the same output
+
+## 2. Rendering
+
+- [x] 2.1 Refactor `renderTinted` into `renderLayered` (design §4: source into layer A → noise overlay → tint mix → one draw with blur and the object's composite op), taken when noise, dither or tint is active; keep the blur/adjustments fast path; without filter support, skip only the filter steps (adjustments, tint, blur) instead of returning early; verify the existing `objectEffects` tests and `e2e/effects.spec.ts` still pass, and by hand that tint still looks as before in Chrome
+- [x] 2.2 Add the dither source (design §2): a local-frame offscreen canvas at one pixel per cell, rendered with the adjustment filter where supported, then `getImageData` → `addNoise` (per cell) → `atkinson` → `putImageData`, drawn back through position · rotation · scale(pixelSize) with smoothing off; catch readback errors (tainted canvas) and fall back to the plain render; verify in the dev server that a dithered image is black and white only, Pixel size 2 → 6 makes cells three times wider, moving or rotating keeps the pattern, scaling keeps the cell size, and transparent areas stay clear
+- [x] 2.3 Add the per-object dither cache (design §5: `WeakMap`, key = adjustments + noise + pixel size + local size, scale, skew, flip, shadow, a content version bumped when `object.dirty` is seen, plus image `src`); verify with a jsdom test that the pixel pass runs once over several renders, again after a fill change or a scale change, and not after a move or rotate
+- [x] 2.4 Add the noise-only overlay (design §3: grey texture with one pixel per artboard unit, capped at 2048 per side, cached by size; `overlay` at `globalAlpha = amount/100` in the layer's local frame with smoothing off, then `destination-in` with the layer); verify in the dev server that the grain is stable across reselect, move and reload, scales with zoom, keeps a transparent surround, and the image stays sharp in the 3000 px export
+- [x] 2.5 Check combinations, zoom and export by hand: Brightness +50 on a dithered image whitens more pixels, Tint 100% blue on a dithered shape gives blue and black only, Blur softens the bitmap, and a layer with every effect looks the same at 25%, 100% and 400% and in the downloaded PNG; check Safari by hand too (WebKit fallback: noise and dither render, the others don't)
+  - Checked in Chrome on :3002: dither, Pixel size, Brightness as the threshold, blue tint on a dithered circle, rotation keeps the pattern, same look at 118% and 230%. The export was checked with a throwaway Playwright script in Chromium and WebKit: the dithered region of the 3000 px PNG has exactly 2 values, and the noise region has 190 grey levels (full resolution). Real Safari wasn't checked by hand; Playwright WebKit covers the no-filter path.
+
+## 3. Editor wiring and UI
+
+- [x] 3.1 Extend `setActiveItemEffect` in `useEditorItems` and the merge in `CanvasEditor` for the new keys (`ditherEnabled` commits straight away, never merged; "noise" and "pixel size" merge keys for slider commits); verify typecheck and, in the dev server, that the Edit menu shows "Undo Noise", "Undo Dither" and "Undo Pixel size"
+- [x] 3.2 Add to `EffectsControls` for non-text layers (design §6): a Noise slider, a Dither row (Reshaped `Switch` with `aria-label` "Dither" plus a Reset `Pill`), and a Pixel size slider whose slider and Reset are disabled while Dither is off; Reset Dither keeps Pixel size; change the note to "Blur and colour adjustments aren't supported in this browser." and stop it disabling Noise, Dither and Pixel size; verify in the dev server on an image (all rows), a text box (no Noise/Dither/Pixel size), and that arrow keys on the new sliders don't nudge the layer
+  - Reshaped's `Switch` renders a plain checkbox, so it gets `inputAttributes={{ role: 'switch' }}`.
+- [x] 3.3 Check the e2e hook: `objects()[].effects` includes `noiseAmount`, `ditherEnabled` and `ditherPixelSize` (it spreads `getEffects`); verify on `/?e2e` that a new shape reads 0, `false` and 2
+
+## 4. End-to-end tests
+
+- [x] 4.1 Extend the `effects` page object with `ditherSwitch` (by role and name) and use the existing `slider`/`reset`/`group` for Noise and Pixel size; update the "older scene loads neutral" expectation for the new keys; verify typecheck and that the existing effects tests pass
+- [x] 4.2 Add a "noise and dither" group that runs in both browsers (no filter-support skip): Noise drag → hook value + "Undo Noise" → undo restores 0; Dither toggle → "Undo Dither"; Pixel size disabled while Dither is off, then a drag records "Pixel size"; Reset Dither keeps Pixel size; text layer shows none of the three; verify `npm run test:e2e -- effects` passes in Chromium and WebKit
+- [x] 4.3 Add persistence tests for the new values (reload, Save JSON, paste in place) and extend the unsupported-browser test: where filters are missing, Noise, Dither and Pixel size stay enabled while the filter controls are disabled; verify both browsers pass and the full `npm run test:e2e` stays green
+
+## 5. Docs and release
+
+- [x] 5.1 Update `CLAUDE.md` (Effects bullet: new properties, pipeline order, dither in the local frame plus cache, noise overlay, which effects need canvas filters; `LayerActions` line; `objectEffects.ts` Structure entry) and `docs/ARCHITECTURE.md` §1f; verify they describe `renderLayered` and nothing still says "effects aren't supported" for noise or dither
+- [x] 5.2 Add a `CHANGELOG.md` entry ("Noise and 1-bit dither for layers"); verify `/api/changelog` lists it in the dev server
+- [x] 5.3 Run `npm run typecheck`, `npm test`, `npm run build` and `npm run test:e2e` (let Playwright build); verify all pass
+- [ ] 5.4 At archive: update the main `object-effects` spec's Purpose to mention noise and dither; verify `openspec validate --specs` passes

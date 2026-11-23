@@ -5,12 +5,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { captureSnapshot, restoreSnapshot } from './history'
 import {
   NEUTRAL_EFFECTS,
+  addNoise,
+  atkinson,
   blurRadius,
   clampEffect,
+  ditherRuns,
   filterString,
   getBlur,
   getEffects,
+  hasEffects,
   installObjectEffects,
+  noise,
   normaliseColor,
   setFiltersSupportedForTests,
   tintBox,
@@ -245,5 +250,157 @@ describe('render wrap', () => {
     rect.render(ctx)
     // Only the finished layer reaches the canvas; the mixing happens offscreen.
     expect(draw).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('noise and dither properties', () => {
+  it('serialise at neutral and keep set values through clone', async () => {
+    expect(new Rect().toObject()).toMatchObject({ noiseAmount: 0, ditherEnabled: false, ditherPixelSize: 2 })
+    const rect = new Rect({ width: 10, height: 10 })
+    rect.set({ noiseAmount: 30, ditherEnabled: true, ditherPixelSize: 5 } as never)
+    expect(getEffects(await rect.clone())).toEqual(fx({ noiseAmount: 30, ditherEnabled: true, ditherPixelSize: 5 }))
+  })
+
+  it('read invalid values as neutral', () => {
+    expect(getEffects({ noiseAmount: 'x', ditherEnabled: 'yes', ditherPixelSize: Number.NaN })).toEqual(NEUTRAL_EFFECTS)
+    expect(clampEffect('ditherPixelSize', 20)).toBe(8)
+    expect(clampEffect('ditherPixelSize', 0)).toBe(1)
+    expect(clampEffect('noiseAmount', 150)).toBe(100)
+  })
+
+  it('count Pixel size only while dithering', () => {
+    expect(hasEffects(fx({ ditherPixelSize: 6 }))).toBe(false)
+    expect(hasEffects(fx({ ditherEnabled: true }))).toBe(true)
+    expect(hasEffects(fx({ noiseAmount: 1 }))).toBe(true)
+  })
+
+  it('leave filters out', () => {
+    expect(filterString(fx({ noiseAmount: 50, ditherEnabled: true }), ID)).toBe('')
+  })
+})
+
+describe('noise', () => {
+  it('is deterministic and within −1…1, averaging about 0', () => {
+    expect(noise(3, 7)).toBe(noise(3, 7))
+    expect(noise(3, 7)).not.toBe(noise(7, 3))
+    let sum = 0
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        const n = noise(x, y)
+        expect(n).toBeGreaterThanOrEqual(-1)
+        expect(n).toBeLessThanOrEqual(1)
+        sum += n
+      }
+    }
+    expect(Math.abs(sum / 65536)).toBeLessThan(0.02)
+  })
+})
+
+/** A w×h RGBA buffer of one grey level and alpha. */
+const buffer = (w: number, h: number, grey: number, alpha = 255) => {
+  const data = new Uint8ClampedArray(w * h * 4)
+  for (let i = 0; i < w * h; i++) data.set([grey, grey, grey, alpha], i * 4)
+  return data
+}
+const greys = (data: Uint8ClampedArray) => Array.from({ length: data.length / 4 }, (_, i) => data[i * 4])
+
+describe('addNoise', () => {
+  it('does nothing at amount 0, and is repeatable', () => {
+    const plain = buffer(8, 8, 100)
+    addNoise(plain, 8, 8, 0)
+    expect(plain).toEqual(buffer(8, 8, 100))
+    const a = buffer(8, 8, 100)
+    const b = buffer(8, 8, 100)
+    addNoise(a, 8, 8, 50)
+    addNoise(b, 8, 8, 50)
+    expect(a).toEqual(b)
+    expect(a).not.toEqual(buffer(8, 8, 100))
+  })
+
+  it('leaves alpha and transparent pixels alone', () => {
+    const data = buffer(4, 4, 100, 0)
+    addNoise(data, 4, 4, 100)
+    expect(data).toEqual(buffer(4, 4, 100, 0))
+  })
+})
+
+describe('atkinson', () => {
+  it('turns flat grey into a mix of black and white', () => {
+    const data = buffer(16, 16, 128)
+    atkinson(data, 16, 16)
+    const values = new Set(greys(data))
+    expect(values).toEqual(new Set([0, 255]))
+  })
+
+  it('keeps pure white and black', () => {
+    const white = buffer(8, 8, 255)
+    atkinson(white, 8, 8)
+    expect(white).toEqual(buffer(8, 8, 255))
+    const black = buffer(8, 8, 0)
+    atkinson(black, 8, 8)
+    expect(black).toEqual(buffer(8, 8, 0))
+  })
+
+  it('renders mid-tones lighter than their grey (the dropped 2/8)', () => {
+    const data = buffer(32, 32, 160)
+    atkinson(data, 32, 32)
+    const white = greys(data).filter((g) => g === 255).length / 1024
+    expect(white).toBeGreaterThan(160 / 255)
+  })
+
+  it('makes faint pixels transparent and gives them no error', () => {
+    const data = buffer(4, 1, 200)
+    data[3] = 0 // first pixel transparent
+    data[7] = 100 // second pixel faint
+    atkinson(data, 4, 1)
+    expect([data[3], data[7], data[11], data[15]]).toEqual([0, 0, 255, 255])
+    expect(data[8]).toBe(255)
+  })
+})
+
+describe('dither cache', () => {
+  afterEach(() => setFiltersSupportedForTests(null))
+
+  it('dithers once, again on a content or scale change, not on move or rotate', () => {
+    setFiltersSupportedForTests(true)
+    const ctx = document.createElement('canvas').getContext('2d')!
+    ctx.canvas.width = ctx.canvas.height = 200
+    Object.assign(ctx, { getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) })
+    const rect = new Rect({ left: 50, top: 50, width: 20, height: 20, fill: '#888' })
+    rect.set({ ditherEnabled: true } as never)
+    const runs = () => ditherRuns.count
+    const start = runs()
+    rect.render(ctx)
+    rect.render(ctx)
+    rect.render(ctx)
+    expect(runs() - start).toBe(1)
+
+    rect.set({ left: 80, angle: 30 })
+    rect.render(ctx)
+    expect(runs() - start).toBe(1)
+
+    rect.set({ fill: '#333' })
+    rect.render(ctx)
+    expect(runs() - start).toBe(2)
+
+    rect.set({ scaleX: 2 })
+    rect.render(ctx)
+    expect(runs() - start).toBe(3)
+
+    rect.set({ ditherPixelSize: 4 } as never)
+    rect.render(ctx)
+    expect(runs() - start).toBe(4)
+  })
+
+  it('dithers where canvas filters are unsupported', () => {
+    setFiltersSupportedForTests(false)
+    const ctx = document.createElement('canvas').getContext('2d')!
+    ctx.canvas.width = ctx.canvas.height = 200
+    Object.assign(ctx, { getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) })
+    const rect = new Rect({ left: 50, top: 50, width: 20, height: 20 })
+    rect.set({ ditherEnabled: true } as never)
+    const start = ditherRuns.count
+    rect.render(ctx)
+    expect(ditherRuns.count - start).toBe(1)
   })
 })

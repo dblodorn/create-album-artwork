@@ -9,7 +9,7 @@ import { shortcut } from './helpers/keys'
 import { RECT_SCENE, jsonFile } from './helpers/scenes'
 import { pages } from './pages'
 
-// Spec: object-effects (colour adjustments, reset per control, persistence, unsupported browsers).
+// Spec: object-effects (colour adjustments, noise and dither, reset per control, persistence, unsupported browsers).
 
 const effectsOf = async (page: Page, index = 0) => (await objects(page))[index].effects
 
@@ -117,8 +117,83 @@ test.describe('colour adjustments', () => {
   })
 })
 
+// Noise and dither don't need canvas filters, so these run in every browser.
+test.describe('noise and dither', () => {
+  test.beforeEach(async ({ app }) => {
+    await app.open()
+  })
+
+  test('a Noise drag is one named undo step, and undo restores it', async ({ page }) => {
+    await loadAndSelect(page, RECT_SCENE)
+    const { effects } = pages(page)
+    await effects.open()
+    await effects.drag('Noise', 0, 0.5)
+    const noise = (await effectsOf(page)).noiseAmount
+    expect(noise).toBeGreaterThan(20)
+    await expect(effects.group('Noise')).toContainText(`Noise · ${noise}`)
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Noise')
+
+    await page.keyboard.press('Escape')
+    await blurFocus(page)
+    await shortcut(page, 'Mod+Z')
+    await expect.poll(async () => (await effectsOf(page)).noiseAmount).toBe(0)
+  })
+
+  test('Dither switches on as one step; Pixel size needs it; Reset keeps Pixel size', async ({ page }) => {
+    await loadAndSelect(page, RECT_SCENE)
+    const { effects } = pages(page)
+    await effects.open()
+    await expect(effects.ditherSwitch).not.toBeChecked()
+    await expect(effects.slider('Pixel size')).toBeDisabled()
+    await expect(effects.reset('Dither')).toBeDisabled()
+    await expect(effects.reset('Pixel size')).toBeDisabled()
+
+    await effects.ditherSwitch.click({ force: true })
+    await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(true)
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Dither')
+    await expect(effects.slider('Pixel size')).toBeEnabled()
+
+    await effects.drag('Pixel size', 1 / 7, 0.9)
+    const size = (await effectsOf(page)).ditherPixelSize
+    expect(size).toBeGreaterThan(4)
+    await expect(effects.group('Pixel size')).toContainText(`Pixel size · ${size}`)
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Pixel size')
+
+    await effects.reset('Dither').click()
+    await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(false)
+    expect((await effectsOf(page)).ditherPixelSize).toBe(size)
+    await expect(effects.ditherSwitch).not.toBeChecked()
+    await expect(effects.slider('Pixel size')).toBeDisabled()
+
+    await page.keyboard.press('Escape')
+    await blurFocus(page)
+    await shortcut(page, 'Mod+Z')
+    await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(true)
+  })
+
+  test('a text layer offers neither', async ({ page }) => {
+    await addText(page)
+    const { effects, layers } = pages(page)
+    await layers.rows.first().click()
+    await effects.open()
+    await expect(effects.group('Noise')).toHaveCount(0)
+    await expect(effects.group('Pixel size')).toHaveCount(0)
+    await expect(effects.ditherSwitch).toHaveCount(0)
+  })
+})
+
 test.describe('effects in the scene', () => {
-  const FX = { blurAmount: 4, brightnessAmount: 20, contrastAmount: -10, saturationAmount: -100, tintAmount: 40, tintColor: '#3366cc' }
+  const FX = {
+    blurAmount: 4,
+    brightnessAmount: 20,
+    contrastAmount: -10,
+    saturationAmount: -100,
+    tintAmount: 40,
+    tintColor: '#3366cc',
+    noiseAmount: 25,
+    ditherEnabled: true,
+    ditherPixelSize: 4,
+  }
 
   test('survive a reload and Save JSON', async ({ page, app }) => {
     await app.open()
@@ -156,10 +231,13 @@ test.describe('effects in the scene', () => {
       saturationAmount: 0,
       tintAmount: 0,
       tintColor: '#ff0000',
+      noiseAmount: 0,
+      ditherEnabled: false,
+      ditherPixelSize: 2,
     })
   })
 
-  test('without canvas filters the controls are disabled and say so', async ({ page, app }) => {
+  test('without canvas filters the filter controls are disabled and say so', async ({ page, app }) => {
     await app.open()
     test.skip(!!(await hook(page, 'filtersSupported')), 'this browser supports canvas filters')
     await loadAndSelect(page, rectWith(FX))
@@ -169,6 +247,10 @@ test.describe('effects in the scene', () => {
     await expect(effects.slider('Brightness')).toBeDisabled()
     await expect(effects.reset('Saturation')).toBeDisabled()
     await expect(effects.tintColour).toBeDisabled()
+    // Noise and dither don't need filters.
+    await expect(effects.slider('Noise')).toBeEnabled()
+    await expect(effects.ditherSwitch).toBeEnabled()
+    await expect(effects.slider('Pixel size')).toBeEnabled()
     // The values are kept.
     expect(await effectsOf(page)).toEqual(FX)
   })

@@ -146,7 +146,7 @@ export class LayersPanel {
   }
 }
 
-type EffectName = 'Blur' | 'Brightness' | 'Contrast' | 'Saturation' | 'Tint'
+type EffectName = 'Blur' | 'Brightness' | 'Contrast' | 'Saturation' | 'Tint' | 'Noise' | 'Pixel size'
 
 /** The selected layer's Effects popout. Each control is a group named after it. */
 export class EffectsPopout {
@@ -164,14 +164,17 @@ export class EffectsPopout {
   slider(name: EffectName) {
     return this.group(name).locator('input[type="range"]')
   }
-  reset(name: EffectName) {
+  reset(name: EffectName | 'Dither') {
     return this.page.getByRole('button', { name: `Reset ${name}`, exact: true })
   }
   get tintColour() {
     return this.page.getByLabel('Tint colour')
   }
+  get ditherSwitch() {
+    return this.page.getByRole('switch', { name: 'Dither', exact: true })
+  }
   get unsupportedNote() {
-    return this.page.getByText("Effects aren't supported in this browser.")
+    return this.page.getByText("Blur and colour adjustments aren't supported in this browser.")
   }
   /** Drags a slider's thumb from `from` to `to` (fractions of the track) in several moves: one drag. */
   async drag(name: EffectName, from: number, to: number) {

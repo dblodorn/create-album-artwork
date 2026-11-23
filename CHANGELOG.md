@@ -4,6 +4,13 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-23 — Noise and 1-bit dither for layers
+
+- The Effects popout has a Noise slider that adds film-style grain to images, drawings and shapes. The grain stays put as you edit and scales with zoom.
+- Dither turns a layer into an old-Mac-style black-and-white bitmap. Pixel size, from 1 to 8, sets how chunky the bitmap pixels are; they move and rotate with the layer.
+- Brightness and Contrast set how much turns black or white, Noise roughens the bitmap, and Tint colours the white pixels.
+- Noise and Dither also work in browsers that can't show the other effects. Both are saved with the file and show in the PNG export.
+
 ## 2026-11-21 — Brightness, contrast, saturation and tint for layers
 
 - The Effects popout (the wand on a selected layer) now has Brightness, Contrast and Saturation sliders, from −100 to +100, for images, drawings and shapes. Saturation at −100 turns a layer greyscale.
