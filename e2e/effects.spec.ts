@@ -17,8 +17,10 @@ const effectsOf = async (page: Page, index = 0) => (await objects(page))[index].
 async function loadAndSelect(page: Page, scene: object, name = 'fx.json') {
   await page.locator('input[type="file"][accept*="json"]').setInputFiles(jsonFile(name, scene))
   await expect(pages(page).tabs.active).toHaveText(name.replace(/\.json$/, ''))
+  // The new tab's undo history is installed once the load finishes; steps taken sooner are lost.
+  await expect.poll(() => hook(page, 'ready')).toBe(true)
   const { layers } = pages(page)
-  await layers.rows.first().click()
+  await layers.select('first')
   await expect.poll(() => hook(page, 'selection')).not.toEqual([])
 }
 
@@ -45,7 +47,7 @@ test.describe('colour adjustments', () => {
     await expect(effects.group('Brightness')).toContainText(`Brightness · ${brightness}`)
     await expect.poll(() => hook(page, 'undoLabel')).toBe('Brightness')
 
-    await page.keyboard.press('Escape')
+    await effects.close()
     await blurFocus(page)
     await shortcut(page, 'Mod+Z')
     await expect.poll(async () => (await effectsOf(page)).brightnessAmount).toBe(0)
@@ -85,7 +87,7 @@ test.describe('colour adjustments', () => {
     await expect.poll(async () => (await effectsOf(page)).tintAmount).toBe(0)
     expect((await effectsOf(page)).tintColor).toBe('#0055ff')
 
-    await page.keyboard.press('Escape')
+    await effects.close()
     await blurFocus(page)
     await shortcut(page, 'Mod+Z')
     await expect.poll(async () => (await effectsOf(page)).tintAmount).toBe(strength)
@@ -95,7 +97,7 @@ test.describe('colour adjustments', () => {
   test('a text layer offers Blur only', async ({ page }) => {
     await addText(page)
     const { effects, layers } = pages(page)
-    await layers.rows.first().click()
+    await layers.select('first')
     await effects.open()
     await expect(effects.group('Blur')).toBeVisible()
     for (const name of ['Brightness', 'Contrast', 'Saturation', 'Tint'] as const) {
@@ -133,7 +135,7 @@ test.describe('noise and dither', () => {
     await expect(effects.group('Noise')).toContainText(`Noise · ${noise}`)
     await expect.poll(() => hook(page, 'undoLabel')).toBe('Noise')
 
-    await page.keyboard.press('Escape')
+    await effects.close()
     await blurFocus(page)
     await shortcut(page, 'Mod+Z')
     await expect.poll(async () => (await effectsOf(page)).noiseAmount).toBe(0)
@@ -165,7 +167,7 @@ test.describe('noise and dither', () => {
     await expect(effects.ditherSwitch).not.toBeChecked()
     await expect(effects.slider('Pixel size')).toBeDisabled()
 
-    await page.keyboard.press('Escape')
+    await effects.close()
     await blurFocus(page)
     await shortcut(page, 'Mod+Z')
     await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(true)
@@ -174,7 +176,7 @@ test.describe('noise and dither', () => {
   test('a text layer offers neither', async ({ page }) => {
     await addText(page)
     const { effects, layers } = pages(page)
-    await layers.rows.first().click()
+    await layers.select('first')
     await effects.open()
     await expect(effects.group('Noise')).toHaveCount(0)
     await expect(effects.group('Pixel size')).toHaveCount(0)

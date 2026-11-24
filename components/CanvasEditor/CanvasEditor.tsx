@@ -28,6 +28,7 @@ import {
 import { ARTBOARD, DEFAULT_BACKGROUND } from './lib/constants'
 import { EFFECT_LABEL } from './lib/objectEffects'
 import { isImage, isText } from './lib/objectTypes'
+import { rasterize } from './lib/rasterize'
 import { useCanvasLayers } from './lib/useCanvasLayers'
 import { useEditCommands } from './lib/useEditCommands'
 import { useE2EHook } from './lib/useE2EHook'
@@ -97,7 +98,7 @@ export function CanvasEditor() {
   useE2EHook({ editor, history, viewport, files })
 
   const layers = useCanvasLayers(editor)
-  const { select: selectLayer } = layers
+  const { select: selectLayer, toggle: toggleLayer } = layers
 
   // Middle of the part of the artboard currently on screen, in artboard units.
   const { zoom, pan } = viewport
@@ -125,6 +126,42 @@ export function CanvasEditor() {
     },
     [isDrawing, toggleDraw, selectLayer]
   )
+  const onToggleLayer = useCallback(
+    (object: FabricObject) => {
+      if (isDrawing) toggleDraw()
+      toggleLayer(object)
+    },
+    [isDrawing, toggleDraw, toggleLayer]
+  )
+
+  // Merge (several layers) and Rasterize (one): replace them with an image of
+  // how they look, as one undo step.
+  const [rasterizing, setRasterizing] = useState(false)
+  const rasterizeSelected = useCallback(async () => {
+    if (!editor || rasterizing || isDrawing) return
+    const objects = editor.canvas.getActiveObjects()
+    if (!objects.length) return
+    const label = objects.length > 1 ? 'Merge' : 'Rasterize'
+    setRasterizing(true)
+    try {
+      await history.transaction(label, async () => {
+        await rasterize(editor, objects)
+        editor.commit(label)
+      })
+    } catch (err) {
+      console.error(`${label} failed`, err)
+      toast.show({
+        color: 'critical',
+        text: `Can't ${label.toLowerCase()}: ${
+          err instanceof DOMException && err.name === 'SecurityError'
+            ? 'an image from another site blocks it.'
+            : 'something went wrong. Try again.'
+        }`,
+      })
+    } finally {
+      setRasterizing(false)
+    }
+  }, [editor, history, isDrawing, rasterizing, toast])
 
   // The image layer the Remove background dialog is working on.
   const [cutoutTarget, setCutoutTarget] = useState<FabricImage | null>(null)
@@ -149,13 +186,13 @@ export function CanvasEditor() {
     (direction: -1 | 1) => {
       const rows = layers.layers
       if (!rows.length) return
-      const current = rows.findIndex((row) => row.object === layers.activeObject)
+      const current = rows.findIndex((row) => row.object === layers.single)
       const next =
         current === -1 ? (direction < 0 ? 0 : rows.length - 1) : current + direction
       if (next < 0 || next >= rows.length || next === current) return
       onSelectLayer(rows[next].object)
     },
-    [layers.layers, layers.activeObject, onSelectLayer]
+    [layers.layers, layers.single, onSelectLayer]
   )
 
   useEditorShortcuts(editor?.canvas, {
@@ -293,8 +330,14 @@ export function CanvasEditor() {
       <DockablePanel title="Layers" side="right" dock={layersDock}>
         <LayersPanel
           layers={layers.layers}
-          activeObject={layers.activeObject}
+          selected={layers.selected}
+          single={layers.single}
+          lastSelected={layers.lastSelected}
           onSelect={onSelectLayer}
+          onToggle={onToggleLayer}
+          onMerge={rasterizeSelected}
+          onRasterize={rasterizeSelected}
+          rasterizing={rasterizing}
           onMove={layers.moveTo}
           onRemoveBackground={openRemoveBackground}
           isDrawing={isDrawing}

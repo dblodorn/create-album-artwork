@@ -4,7 +4,7 @@ import { Button, Popover, Slider, Switch, Text, View } from 'reshaped'
 
 import { Hint, Pill, mergeTriggerAttributes } from '@/design'
 
-import { Effects, RotateLeft, RotateRight, ScaleDown, ScaleUp, Transform, Trash } from './icons'
+import { Effects, Rasterize, RotateLeft, RotateRight, ScaleDown, ScaleUp, Transform, Trash } from './icons'
 import { SHORTCUTS_OFF } from './lib/keyboard'
 import css from './CanvasEditor.module.css'
 import {
@@ -47,7 +47,7 @@ const releaseTriggerFocus = () => {
 /**
  * The selected layer's inline actions: a Transform popout (scale, rotate), an
  * Effects popout (blur; colour adjustments, noise and dither on non-text layers), Remove
- * background on images, and Delete. No up/down buttons: reorder by dragging,
+ * background on images, Rasterize on everything else, and Delete. No up/down buttons: reorder by dragging,
  * Alt+↑/↓, ⌘] / ⌘[ or the Edit menu.
  */
 export function LayerActions({
@@ -58,6 +58,8 @@ export function LayerActions({
   onEffect,
   onDelete,
   onRemoveBackground,
+  onRasterize,
+  rasterizing,
 }: {
   object: FabricObject
   isDrawing: boolean
@@ -66,6 +68,9 @@ export function LayerActions({
   onEffect: OnEffect
   onDelete: () => void
   onRemoveBackground: () => void
+  onRasterize: () => void
+  // A merge or rasterize is running.
+  rasterizing: boolean
 }) {
   // Re-read on every render; the row re-renders after each commit.
   const angle = Math.round(nextAngle(object.angle ?? 0, 0))
@@ -202,6 +207,21 @@ export function LayerActions({
           variant="ghost"
           tooltipPosition="bottom"
         />
+      )}
+      {!isImage(object) && (
+        <Hint text="Rasterize into an image" position="bottom">
+          {(attributes) => (
+            <Button
+              size="small"
+              rounded
+              variant="ghost"
+              icon={Rasterize}
+              onClick={onRasterize}
+              disabled={isDrawing || rasterizing}
+              attributes={{ ...attributes, 'aria-label': 'Rasterize' }}
+            />
+          )}
+        </Hint>
       )}
       <Hint text="Delete ⌫" position="bottom">
         {(attributes) => (

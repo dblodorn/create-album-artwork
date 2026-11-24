@@ -103,12 +103,16 @@ export function useOpenFiles({
 
   // One operation at a time: a click during a swap waits for it.
   const queue = useRef(Promise.resolve())
+  // Operations queued or running (the e2e hook waits for none).
+  const pending = useRef(0)
   const run = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
+    pending.current++
     const next = queue.current.then(fn)
     queue.current = next.then(
       () => {},
       () => {}
     )
+    void queue.current.then(() => pending.current--)
     return next
   }, [])
 
@@ -380,6 +384,8 @@ export function useOpenFiles({
 
   return {
     ready: !!index,
+    // A switch, open or close is in progress (its scene, history or fonts still loading).
+    busy: () => pending.current > 0,
     files,
     activeId: index?.activeId ?? null,
     activeName: index ? (index.files[index.activeId]?.name ?? 'Untitled') : 'Untitled',

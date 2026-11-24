@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 
 import css from './CanvasEditor.module.css'
 import type { Layer } from './lib/useCanvasLayers'
@@ -21,7 +21,8 @@ export function LayerRow({
   focusable: boolean
   hintId: string
   rowRef: (node: HTMLDivElement | null) => void
-  onSelect: () => void
+  // Shift-click toggles the row in a multi-selection; the panel decides.
+  onSelect: (e: MouseEvent<HTMLDivElement>) => void
   onFocus: () => void
   onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => void
   // Inline actions, rendered only on the selected row.

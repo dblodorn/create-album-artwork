@@ -15,7 +15,9 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import type { FabricObject } from 'fabric'
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
-import { Text } from 'reshaped'
+import { Text, View } from 'reshaped'
+
+import { Hint, Pill } from '@/design'
 
 import css from './CanvasEditor.module.css'
 import { LayerRow } from './LayerRow'
@@ -30,8 +32,14 @@ const position = (index: number, total: number) => `position ${index + 1} of ${t
 
 export function LayersPanel({
   layers,
-  activeObject,
+  selected,
+  single,
+  lastSelected,
   onSelect,
+  onToggle,
+  onMerge,
+  onRasterize,
+  rasterizing,
   onMove,
   onRemoveBackground,
   isDrawing,
@@ -41,8 +49,17 @@ export function LayersPanel({
   onDelete,
 }: {
   layers: Layer[]
-  activeObject: FabricObject | null
+  // The canvas selection; `single` when it's exactly one object.
+  selected: FabricObject[]
+  single: FabricObject | null
+  lastSelected: FabricObject | null
   onSelect: (object: FabricObject) => void
+  // Shift-click / Shift+Enter: add to or take out of the selection.
+  onToggle: (object: FabricObject) => void
+  onMerge: () => void
+  onRasterize: () => void
+  // A merge or rasterize is running.
+  rasterizing: boolean
   // `index` is a panel position, 0 = front.
   onMove: (object: FabricObject, index: number) => void
   onRemoveBackground: () => void
@@ -61,22 +78,25 @@ export function LayersPanel({
   // Row to re-focus after a keyboard move re-renders the list.
   const pendingFocus = useRef<string | null>(null)
 
-  const activeId = layers.find((layer) => layer.object === activeObject)?.id ?? null
+  const activeId = layers.find((layer) => layer.object === single)?.id ?? null
+  const isSelected = (layer: Layer) => selected.includes(layer.object)
+  // The row last added to the selection: the one to keep in view.
+  const lastId = layers.find((layer) => layer.object === lastSelected && isSelected(layer))?.id ?? activeId
   const tabStopId =
     (focusedId && layers.some((layer) => layer.id === focusedId) && focusedId) ||
-    activeId ||
+    lastId ||
     layers[0]?.id
 
   // Canvas-driven selection: highlight and bring the row into view.
   useEffect(() => {
-    if (!activeId) return
-    setFocusedId(activeId)
+    if (!lastId) return
+    setFocusedId(lastId)
     if (selectingFromPanel.current) {
       selectingFromPanel.current = false
       return
     }
-    rowRefs.current.get(activeId)?.scrollIntoView({ block: 'nearest' })
-  }, [activeId])
+    rowRefs.current.get(lastId)?.scrollIntoView({ block: 'nearest' })
+  }, [lastId])
 
   useEffect(() => {
     const id = pendingFocus.current
@@ -85,9 +105,10 @@ export function LayersPanel({
     rowRefs.current.get(id)?.focus()
   }, [layers])
 
-  const select = (layer: Layer) => {
+  const select = (layer: Layer, toggle = false) => {
     selectingFromPanel.current = true
-    onSelect(layer.object)
+    if (toggle) onToggle(layer.object)
+    else onSelect(layer.object)
   }
 
   const focusRow = (index: number) => {
@@ -113,7 +134,7 @@ export function LayersPanel({
       setAnnouncement(`${layer.label} moved to ${position(to, layers.length)}`)
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      select(layer)
+      select(layer, e.shiftKey)
     }
   }
 
@@ -146,7 +167,7 @@ export function LayersPanel({
     const layer = layers[from]
     if (!layer) return
     // The dragged object ends up selected, wherever it lands.
-    if (layer.object !== activeObject) select(layer)
+    if (layer.object !== single) select(layer)
     if (to !== from && to >= 0) onMove(layer.object, to)
   }
 
@@ -159,6 +180,9 @@ export function LayersPanel({
 
   return (
     <div className={css.Layers} {...SHORTCUTS_OFF} {...hover}>
+      {selected.length > 1 && (
+        <MergeBar count={selected.length} disabled={isDrawing || rasterizing} onMerge={onMerge} />
+      )}
       {/* The scroll container is also dnd-kit's drag boundary. */}
       <div className={css.LayerScroll}>
         {!layers.length ? (
@@ -182,20 +206,21 @@ export function LayersPanel({
               <div
                 role="listbox"
                 aria-label="Layers, frontmost first"
+                aria-multiselectable
                 className={css.LayerList}
               >
                 {layers.map((layer, index) => (
                   <LayerRow
                     key={layer.id}
                     layer={layer}
-                    selected={layer.id === activeId}
+                    selected={isSelected(layer)}
                     focusable={layer.id === tabStopId}
                     hintId={hintId}
                     rowRef={(node) => {
                       if (node) rowRefs.current.set(layer.id, node)
                       else rowRefs.current.delete(layer.id)
                     }}
-                    onSelect={() => select(layer)}
+                    onSelect={(e) => select(layer, e.shiftKey)}
                     onFocus={() => setFocusedId(layer.id)}
                     onKeyDown={(e) => onRowKeyDown(e, index)}
                     actions={
@@ -208,6 +233,8 @@ export function LayersPanel({
                           onEffect={onEffect}
                           onDelete={onDelete}
                           onRemoveBackground={onRemoveBackground}
+                          onRasterize={onRasterize}
+                          rasterizing={rasterizing}
                         />
                       )
                     }
@@ -225,5 +252,29 @@ export function LayersPanel({
         {announcement}
       </span>
     </div>
+  )
+}
+
+/** Shown while several layers are selected: how many, and Merge. */
+function MergeBar({ count, disabled, onMerge }: { count: number; disabled: boolean; onMerge: () => void }) {
+  return (
+    <View
+      direction="row"
+      justify="space-between"
+      align="center"
+      className={css.MergeBar}
+      attributes={{ role: 'region', 'aria-label': 'Selected layers' }}
+    >
+      <Text variant="caption-1" color="neutral-faded">
+        {count} layers
+      </Text>
+      <Hint text="Merge into one image" position="bottom">
+        {(attributes) => (
+          <Pill disabled={disabled} onClick={onMerge} attributes={{ ...attributes, 'aria-label': 'Merge' }}>
+            Merge
+          </Pill>
+        )}
+      </Hint>
+    </View>
   )
 }

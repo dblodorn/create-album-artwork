@@ -30,6 +30,7 @@ export type E2EHook = {
   zoom(): number
   fitted(): boolean
   activeFileId(): string | null
+  /** Loaded, with no file switch, open or close still in progress. */
   ready(): boolean
   /** Whether this browser applies canvas filters (effects render). */
   filtersSupported(): boolean
@@ -76,7 +77,7 @@ export function useE2EHook({
       zoom: () => latest.current.viewport.zoom,
       fitted: () => latest.current.viewport.getView().fitted,
       activeFileId: () => latest.current.files.activeId,
-      ready: () => latest.current.files.ready && !!latest.current.editor,
+      ready: () => latest.current.files.ready && !latest.current.files.busy() && !!latest.current.editor,
       filtersSupported: canvasFiltersSupported,
     }
     Object.assign(window, { [E2E_GLOBAL]: hook })
