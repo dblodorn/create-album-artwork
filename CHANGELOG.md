@@ -4,6 +4,10 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-24 — Repeated undo after using a popout in Safari
+
+- Fixed: in Safari, after using the Effects or Transform popout, the first ⌘Z worked but pressing it again did nothing until you clicked the canvas. Undo now keeps working.
+
 ## 2026-11-24 — Hide and lock layers; floating panels on phones
 
 - Every row in the Layers panel has an eye and a padlock. The eye hides a layer: it's left off the canvas and the PNG export, and clicks go to whatever is below it. Click it again to show the layer.

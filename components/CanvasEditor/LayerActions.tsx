@@ -53,6 +53,22 @@ const releaseTriggerFocus = () => {
   requestAnimationFrame(releaseFocusNow)
 }
 
+// Reshaped's focus trap remembers what had focus when a popout opened and
+// focuses it again when the trap is released, which can be as late as the
+// popout unmounting (an undo that changes the selection unmounts the row's
+// actions). Safari doesn't focus a button on click, so what it remembered was
+// the layer row, and a late return stranded focus there (shortcuts off: a
+// second ⌘Z did nothing). Focusing the trigger on press makes the trigger the
+// target; once it has unmounted, focusing it does nothing. The default is
+// prevented because Safari's mousedown would otherwise move focus on to the
+// nearest focusable ancestor, the row; the click still opens the popout.
+const focusOnPress = {
+  onMouseDown: (e: { currentTarget: HTMLElement; preventDefault: () => void }) => {
+    e.preventDefault()
+    e.currentTarget.focus({ preventScroll: true })
+  },
+}
+
 /**
  * The selected layer's inline actions: a Transform popout (scale, rotate), an
  * Effects popout (blur; colour adjustments, noise and dither on non-text layers), Remove
@@ -102,7 +118,7 @@ export function LayerActions({
                   icon={Transform}
                   disabled={isDrawing || locked}
                   attributes={{
-                    ...mergeTriggerAttributes(hintAttributes, popoverAttributes),
+                    ...mergeTriggerAttributes(mergeTriggerAttributes(hintAttributes, popoverAttributes), focusOnPress),
                     'aria-label': 'Transform',
                     [RELEASE_ATTR]: '',
                   }}
@@ -199,7 +215,7 @@ export function LayerActions({
                   icon={Effects}
                   disabled={isDrawing}
                   attributes={{
-                    ...mergeTriggerAttributes(hintAttributes, popoverAttributes),
+                    ...mergeTriggerAttributes(mergeTriggerAttributes(hintAttributes, popoverAttributes), focusOnPress),
                     'aria-label': 'Effects',
                     [RELEASE_ATTR]: '',
                   }}
