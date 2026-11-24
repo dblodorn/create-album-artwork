@@ -171,7 +171,12 @@ export class LayersPanel {
 
 type EffectName = 'Blur' | 'Brightness' | 'Contrast' | 'Saturation' | 'Tint' | 'Noise' | 'Pixel size'
 
-/** The selected layer's Effects popout. Each control is a group named after it. */
+type SectionName = 'Blur' | 'Colour' | 'Tint' | 'Noise' | 'Dither'
+
+/**
+ * The selected layer's Effects popout. Each control is a group named after it,
+ * inside a framed section group named "<Section> controls".
+ */
 export class EffectsPopout {
   constructor(readonly page: Page) {}
   get button() {
@@ -203,6 +208,16 @@ export class EffectsPopout {
   }
   get invertSwitch() {
     return this.page.getByRole('switch', { name: 'Invert', exact: true })
+  }
+  get removeWhiteSwitch() {
+    return this.page.getByRole('switch', { name: 'Remove white', exact: true })
+  }
+  section(name: SectionName) {
+    return this.page.getByRole('group', { name: `${name} controls`, exact: true })
+  }
+  /** Every section, in order. */
+  get sections() {
+    return this.page.getByRole('group', { name: / controls$/ })
   }
   get unsupportedNote() {
     return this.page.getByText("Blur and colour adjustments aren't supported in this browser.")

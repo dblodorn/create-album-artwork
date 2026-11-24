@@ -26,7 +26,12 @@ export type EffectKey =
   | 'noiseAmount'
   | 'ditherPixelSize'
 
-export type Effects = Record<EffectKey, number> & { tintColor: string; tintInvert: boolean; ditherEnabled: boolean }
+export type Effects = Record<EffectKey, number> & {
+  tintColor: string
+  tintInvert: boolean
+  ditherEnabled: boolean
+  ditherKnockout: boolean
+}
 
 /**
  * Sets one effect; `final` (once per drag, and for Reset) records the undo
@@ -34,7 +39,7 @@ export type Effects = Record<EffectKey, number> & { tintColor: string; tintInver
  * become one step; Reset, colour picks and the switches are always their own.
  */
 export type OnEffect = (
-  key: EffectKey | 'tintColor' | 'tintInvert' | 'ditherEnabled',
+  key: EffectKey | 'tintColor' | 'tintInvert' | 'ditherEnabled' | 'ditherKnockout',
   value: number | string | boolean,
   final: boolean,
   merge?: boolean
@@ -55,7 +60,7 @@ export const EFFECT_RANGE: Record<EffectKey, { min: number; max: number; neutral
 export const EFFECT_KEYS = Object.keys(EFFECT_RANGE) as EffectKey[]
 
 /** The undo step's name; also the history merge key, lowercased. */
-export const EFFECT_LABEL: Record<EffectKey | 'tintColor' | 'tintInvert' | 'ditherEnabled', string> = {
+export const EFFECT_LABEL: Record<EffectKey | 'tintColor' | 'tintInvert' | 'ditherEnabled' | 'ditherKnockout', string> = {
   blurAmount: 'Blur',
   brightnessAmount: 'Brightness',
   contrastAmount: 'Contrast',
@@ -66,6 +71,7 @@ export const EFFECT_LABEL: Record<EffectKey | 'tintColor' | 'tintInvert' | 'dith
   noiseAmount: 'Noise',
   ditherEnabled: 'Dither',
   ditherPixelSize: 'Pixel size',
+  ditherKnockout: 'Remove white',
 }
 
 /** Red, so a first raise of Strength shows a visible tint. */
@@ -82,6 +88,7 @@ export const NEUTRAL_EFFECTS: Effects = {
   noiseAmount: 0,
   ditherEnabled: false,
   ditherPixelSize: EFFECT_RANGE.ditherPixelSize.neutral,
+  ditherKnockout: false,
 }
 
 /** A whole number within the effect's range; its neutral value for anything that isn't a finite number. */
@@ -104,12 +111,13 @@ export function getEffects(object: unknown): Effects {
   effects.tintColor = normaliseColor(source.tintColor) ?? DEFAULT_TINT
   effects.tintInvert = source.tintInvert === true
   effects.ditherEnabled = source.ditherEnabled === true
+  effects.ditherKnockout = source.ditherKnockout === true
   return effects
 }
 
 export const getBlur = (object: unknown): number => getEffects(object).blurAmount
 
-/** Whether anything changes how the layer looks. Pixel size alone doesn't: it only matters while dithering. */
+/** Whether anything changes how the layer looks. Pixel size and Remove white alone don't: they only matter while dithering. */
 export const hasEffects = (e: Effects) =>
   e.ditherEnabled || EFFECT_KEYS.some((key) => key !== 'ditherPixelSize' && e[key] !== EFFECT_RANGE[key].neutral)
 
@@ -253,9 +261,11 @@ const ATKINSON: [number, number][] = [
 /**
  * 1-bit Atkinson dither of an RGBA buffer in place. Pixels with alpha ≥ 128
  * become opaque black or white (Rec. 709 luminance against 128); the rest
- * become transparent and take no error.
+ * become transparent and take no error. With `knockout` (Remove white) the
+ * white pixels are transparent instead; the error is the same, so the same
+ * pixels come out black.
  */
-export function atkinson(data: Uint8ClampedArray, width: number, height: number) {
+export function atkinson(data: Uint8ClampedArray, width: number, height: number, knockout = false) {
   const lum = new Float32Array(width * height)
   for (let i = 0; i < lum.length; i++) {
     const p = i * 4
@@ -272,7 +282,7 @@ export function atkinson(data: Uint8ClampedArray, width: number, height: number)
       }
       const value = old < 128 ? 0 : 255
       data[p] = data[p + 1] = data[p + 2] = value
-      data[p + 3] = 255
+      data[p + 3] = knockout && value === 255 ? 0 : 255
       const error = (old - value) / 8
       for (const [dx, dy] of ATKINSON) {
         const nx = x + dx
@@ -375,6 +385,7 @@ function ditherBitmap(object: FabricObject, e: Effects, frame: Frame, filters: b
   const key = [
     filters ? adjustFilter(e) : '',
     e.noiseAmount,
+    e.ditherKnockout,
     frame.cell,
     frame.cols,
     frame.rows,
@@ -416,7 +427,7 @@ function ditherBitmap(object: FabricObject, e: Effects, frame: Frame, filters: b
   try {
     const image = ctx.getImageData(0, 0, frame.cols, frame.rows)
     addNoise(image.data, frame.cols, frame.rows, e.noiseAmount)
-    atkinson(image.data, frame.cols, frame.rows)
+    atkinson(image.data, frame.cols, frame.rows, e.ditherKnockout)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.putImageData(image, 0, 0)
   } catch {
@@ -570,7 +581,7 @@ export function installObjectEffects() {
   installed = true
 
   const Base = BaseFabricObject as unknown as { customProperties: string[] }
-  const props = [...EFFECT_KEYS, 'tintColor', 'tintInvert', 'ditherEnabled']
+  const props = [...EFFECT_KEYS, 'tintColor', 'tintInvert', 'ditherEnabled', 'ditherKnockout']
   Base.customProperties = [...Base.customProperties, ...props.filter((p) => !Base.customProperties.includes(p))]
 
   const proto = BaseFabricObject.prototype as unknown as Effects & { render: Render }

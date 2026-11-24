@@ -1,5 +1,5 @@
 import type { FabricObject } from 'fabric'
-import { type KeyboardEvent, type SyntheticEvent, useCallback, useRef, useState } from 'react'
+import { type KeyboardEvent, type ReactNode, type SyntheticEvent, useCallback, useRef, useState } from 'react'
 import { Button, Popover, Slider, Switch, Text, View } from 'reshaped'
 
 import { Hint, Pill, mergeTriggerAttributes } from '@/design'
@@ -183,7 +183,8 @@ export function LayerActions({
           </View>
         </Popover.Content>
       </Popover>
-      <Popover position="bottom-end" onAfterClose={releaseTriggerFocus}>
+      {/* Tall enough to overflow a short window: shrink it to fit and scroll instead. */}
+      <Popover position="bottom-end" fallbackAdjustLayout fallbackMinHeight="240px" onAfterClose={releaseTriggerFocus}>
         <Popover.Trigger>
           {(popoverAttributes) => (
             <Hint text="Effects" position="top">
@@ -289,11 +290,11 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
   )
   return (
     <View gap={3} attributes={{ style: { width: 220 } }}>
-      {slider('blurAmount', 'Blur')}
+      <EffectSection name="Blur">{slider('blurAmount', 'Blur')}</EffectSection>
       {!isText(object) && (
         <>
-          {COLOUR_KEYS.map((key) => slider(key, EFFECT_LABEL[key]))}
-          <View gap={1}>
+          <EffectSection name="Colour">{COLOUR_KEYS.map((key) => slider(key, EFFECT_LABEL[key]))}</EffectSection>
+          <EffectSection name="Tint" gap={1}>
             {slider('tintAmount', 'Tint', '%', !supported, {
               // Tint's neutral is 0% with Invert off; one Reset clears both as one "Tint" step.
               atNeutral: effects.tintAmount === 0 && !effects.tintInvert,
@@ -317,16 +318,32 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
               disabled={!supported || effects.tintAmount === 0}
               onChange={(value) => onEffect('tintInvert', value, true)}
             />
-          </View>
-          {slider('noiseAmount', 'Noise', '', false)}
-          <EffectSwitch
-            name="ditherEnabled"
-            caption="Dither"
-            checked={effects.ditherEnabled}
-            onChange={(value) => onEffect('ditherEnabled', value, true)}
-            reset
-          />
-          {slider('ditherPixelSize', 'Pixel size', '', !effects.ditherEnabled)}
+          </EffectSection>
+          <EffectSection name="Noise">{slider('noiseAmount', 'Noise', '', false)}</EffectSection>
+          <EffectSection name="Dither">
+            <EffectSwitch
+              name="ditherEnabled"
+              caption="Dither"
+              checked={effects.ditherEnabled}
+              onChange={(value) => onEffect('ditherEnabled', value, true)}
+              reset={{
+                // Dither's neutral is off with Remove white off; one Reset clears both as one "Dither" step.
+                atNeutral: !effects.ditherEnabled && !effects.ditherKnockout,
+                onReset: () => {
+                  onEffect('ditherKnockout', false, false)
+                  onEffect('ditherEnabled', false, true)
+                },
+              }}
+            />
+            {slider('ditherPixelSize', 'Pixel size', '', !effects.ditherEnabled)}
+            <EffectSwitch
+              name="ditherKnockout"
+              caption={EFFECT_LABEL.ditherKnockout}
+              checked={effects.ditherKnockout}
+              disabled={!effects.ditherEnabled}
+              onChange={(value) => onEffect('ditherKnockout', value, true)}
+            />
+          </EffectSection>
         </>
       )}
       {!supported && (
@@ -338,7 +355,19 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
   )
 }
 
-/** Overrides for a control whose neutral state is more than its slider value (Tint: 0% and Invert off). */
+/** One framed group of controls in the Effects popout (hairline border, square in the dmbk theme). */
+function EffectSection({ name, gap = 3, children }: { name: string; gap?: number; children: ReactNode }) {
+  return (
+    <View borderColor="neutral-faded" padding={2} gap={gap} attributes={{ role: 'group', 'aria-label': `${name} controls` }}>
+      {children}
+    </View>
+  )
+}
+
+/**
+ * Overrides for a control whose neutral state is more than its own value
+ * (Tint: 0% and Invert off; Dither: off and Remove white off).
+ */
 type ResetProps = { atNeutral: boolean; onReset: () => void }
 
 function EffectSlider({
@@ -393,8 +422,9 @@ function EffectSlider({
 }
 
 /**
- * An effect's on/off switch: Dither (with its own Reset, off; Pixel size is
- * kept either way) and Tint's Invert (no Reset: Tint's clears it).
+ * An effect's on/off switch: Dither (with its own Reset, which also clears
+ * Remove white; Pixel size is kept either way), and Tint's Invert and
+ * Dither's Remove white (no Reset: their control's clears them).
  */
 function EffectSwitch({
   name,
@@ -402,14 +432,15 @@ function EffectSwitch({
   checked,
   disabled = false,
   onChange,
-  reset = false,
+  reset,
 }: {
-  name: 'ditherEnabled' | 'tintInvert'
+  name: 'ditherEnabled' | 'ditherKnockout' | 'tintInvert'
   caption: string
   checked: boolean
   disabled?: boolean
   onChange: (value: boolean) => void
-  reset?: boolean
+  /** `true`: a Reset that switches it off; or overrides for a wider neutral state. */
+  reset?: true | ResetProps
 }) {
   return (
     <View direction="row" justify="space-between" align="center">
@@ -427,10 +458,11 @@ function EffectSwitch({
       </Switch>
       {reset && (
         <Pill
-          disabled={!checked}
+          disabled={reset === true ? !checked : reset.atNeutral}
           onClick={(e) => {
             keepFocusInPopout(e)
-            onChange(false)
+            if (reset === true) onChange(false)
+            else reset.onReset()
           }}
           attributes={{ 'aria-label': `Reset ${caption}` }}
         >

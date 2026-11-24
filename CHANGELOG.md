@@ -4,6 +4,12 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-24 — Remove white from dithered layers; effects in sections
+
+- Dither has a new Remove white switch, under Pixel size. With it on, the white pixels of a dithered layer become see-through, so only the black dots are left over whatever is behind.
+- To colour the dots, add a Tint with Invert on (a plain tint has no white left to colour). Dither's Reset turns Remove white off too, and it is saved with the file and shows in the PNG export.
+- The Effects popout now groups its controls in framed sections: Blur; Brightness, Contrast and Saturation; Tint; Noise; Dither. In a short window it scrolls instead of running off the screen.
+
 ## 2026-11-23 — Undo right after closing a popout in Safari
 
 - Fixed: in Safari, pressing Escape to close the Effects or Transform popout and then ⌘Z sometimes did nothing until you clicked the canvas. Escape after a Reset could also deselect the layer. Both now work straight away.

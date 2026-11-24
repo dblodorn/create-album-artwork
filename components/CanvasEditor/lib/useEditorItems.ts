@@ -70,9 +70,9 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
   // Live while dragging (no history step), committed once at the end. A
   // colour that isn't #rrggbb, or a switch value that isn't a boolean, is ignored.
   const setActiveItemEffect = useCallback(
-    (key: EffectKey | 'tintColor' | 'tintInvert' | 'ditherEnabled', value: number | string | boolean, final: boolean) => {
+    (key: EffectKey | 'tintColor' | 'tintInvert' | 'ditherEnabled' | 'ditherKnockout', value: number | string | boolean, final: boolean) => {
       if (!editor || !activeItem) return
-      if (key === 'ditherEnabled' || key === 'tintInvert') {
+      if (key === 'ditherEnabled' || key === 'ditherKnockout' || key === 'tintInvert') {
         if (typeof value !== 'boolean') return
         activeItem.set({ [key]: value } as never)
       } else if (key === 'tintColor') {

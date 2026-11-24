@@ -207,6 +207,53 @@ test.describe('noise and dither', () => {
     await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(true)
   })
 
+  test("Remove white: needs Dither, is one named step, and Dither's Reset clears it", async ({ page }) => {
+    await loadAndSelect(page, RECT_SCENE)
+    const { effects } = pages(page)
+    await effects.open()
+    await expect(effects.removeWhiteSwitch).not.toBeChecked()
+    await expect(effects.removeWhiteSwitch).toBeDisabled()
+
+    await effects.ditherSwitch.click({ force: true })
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Dither')
+    await expect(effects.removeWhiteSwitch).toBeEnabled()
+    await effects.removeWhiteSwitch.click({ force: true })
+    await expect.poll(async () => (await effectsOf(page)).ditherKnockout).toBe(true)
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Remove white')
+
+    // Kept, but disabled, while Dither is off; Dither's Reset still clears it.
+    await effects.ditherSwitch.click({ force: true })
+    await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(false)
+    await expect(effects.removeWhiteSwitch).toBeDisabled()
+    await expect(effects.removeWhiteSwitch).toBeChecked()
+    await effects.ditherSwitch.click({ force: true })
+    await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(true)
+    expect((await effectsOf(page)).ditherKnockout).toBe(true)
+
+    // Reset turns both off as one "Dither" step.
+    await effects.reset('Dither').click()
+    await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(false)
+    expect((await effectsOf(page)).ditherKnockout).toBe(false)
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Dither')
+    await expect(effects.reset('Dither')).toBeDisabled()
+
+    await effects.close()
+    // Blur before every undo: in WebKit the popout hands focus back to the
+    // Layers row (shortcuts off) when the first undo re-renders it.
+    await blurFocus(page)
+    await shortcut(page, 'Mod+Z')
+    await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(true)
+    expect((await effectsOf(page)).ditherKnockout).toBe(true)
+    // Back past the off/on flips to the switch's own step, one undo at a time.
+    for (const label of ['Dither', 'Dither', 'Remove white']) {
+      await expect.poll(() => hook(page, 'undoLabel')).toBe(label)
+      await blurFocus(page)
+      await shortcut(page, 'Mod+Z')
+    }
+    await expect.poll(async () => (await effectsOf(page)).ditherKnockout).toBe(false)
+    expect((await effectsOf(page)).ditherEnabled).toBe(true)
+  })
+
   test('a text layer offers neither', async ({ page }) => {
     await addText(page)
     const { effects, layers } = pages(page)
@@ -215,6 +262,48 @@ test.describe('noise and dither', () => {
     await expect(effects.group('Noise')).toHaveCount(0)
     await expect(effects.group('Pixel size')).toHaveCount(0)
     await expect(effects.ditherSwitch).toHaveCount(0)
+    await expect(effects.removeWhiteSwitch).toHaveCount(0)
+  })
+})
+
+test.describe('effect sections', () => {
+  test.beforeEach(async ({ app }) => {
+    await app.open()
+  })
+
+  test('a shape gets five framed sections in order, each holding its controls', async ({ page }) => {
+    await loadAndSelect(page, RECT_SCENE)
+    const { effects } = pages(page)
+    await effects.open()
+    await expect(effects.sections).toHaveCount(5)
+    const names = await effects.sections.evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+    expect(names).toEqual(['Blur controls', 'Colour controls', 'Tint controls', 'Noise controls', 'Dither controls'])
+    await expect(effects.section('Colour').getByRole('group', { name: 'Saturation', exact: true })).toBeVisible()
+    await expect(effects.section('Tint').getByRole('switch', { name: 'Invert', exact: true })).toHaveCount(1)
+    await expect(effects.section('Dither').getByRole('switch', { name: 'Remove white', exact: true })).toHaveCount(1)
+    // A hairline frame (Reshaped draws it on ::before).
+    const border = await effects.section('Noise').evaluate((el) => getComputedStyle(el, '::before').borderTopWidth)
+    expect(border).toBe('1px')
+  })
+
+  test('a text layer gets the Blur section only', async ({ page }) => {
+    await addText(page)
+    const { effects, layers } = pages(page)
+    await layers.select('first')
+    await effects.open()
+    await expect(effects.sections).toHaveCount(1)
+    await expect(effects.section('Blur')).toBeVisible()
+  })
+
+  test('in a short window the popout scrolls, so Remove white is still reachable', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 600 })
+    await loadAndSelect(page, rectWith({ ditherEnabled: true }))
+    const { effects } = pages(page)
+    await effects.open()
+    await effects.removeWhiteSwitch.scrollIntoViewIfNeeded()
+    await expect(effects.removeWhiteSwitch).toBeInViewport()
+    await effects.removeWhiteSwitch.click({ force: true })
+    await expect.poll(async () => (await effectsOf(page)).ditherKnockout).toBe(true)
   })
 })
 
@@ -230,6 +319,7 @@ test.describe('effects in the scene', () => {
     noiseAmount: 25,
     ditherEnabled: true,
     ditherPixelSize: 4,
+    ditherKnockout: true,
   }
 
   test('survive a reload and Save JSON', async ({ page, app }) => {
@@ -272,6 +362,7 @@ test.describe('effects in the scene', () => {
       noiseAmount: 0,
       ditherEnabled: false,
       ditherPixelSize: 2,
+      ditherKnockout: false,
     })
   })
 
@@ -291,6 +382,8 @@ test.describe('effects in the scene', () => {
     await expect(effects.slider('Noise')).toBeEnabled()
     await expect(effects.ditherSwitch).toBeEnabled()
     await expect(effects.slider('Pixel size')).toBeEnabled()
+    await expect(effects.removeWhiteSwitch).toBeEnabled()
+    await expect(effects.removeWhiteSwitch).toBeChecked()
     // The values are kept.
     expect(await effectsOf(page)).toEqual(FX)
   })
