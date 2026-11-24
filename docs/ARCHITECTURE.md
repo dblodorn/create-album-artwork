@@ -174,9 +174,9 @@ Every object carries its effects as custom properties:
 - `brightnessAmount`, `contrastAmount` and `saturationAmount` (−100…100);
 - `tintAmount` (0–100 %) with `tintColor` (`#rrggbb`) and `tintInvert` (boolean);
 - `noiseAmount` (0–100);
-- `ditherEnabled` (boolean) with `ditherPixelSize` (artboard units per bitmap pixel, 1–8).
+- `ditherEnabled` (boolean) with `ditherPixelSize` (artboard units per bitmap pixel, 1–8) and `ditherKnockout` (boolean; Remove white).
 
-Each has a neutral value in `EFFECT_RANGE`: 0, `false`, and 2 for Pixel size (2 puts about 500 bitmap pixels across the artboard, close to an original Mac screen). `lib/objectEffects.ts` adds them to `BaseFabricObject.customProperties` and puts the neutral values on the prototype. That way they serialise with the scene, undo snapshots, clones (paste) and JSON, including "no effect". None is named after a Fabric member: Fabric's text classes already have a `blur()` method, and a property called `blur` once put a function into the scene. `getEffects(obj)` reads them back, clamped, with neutral values for anything missing or invalid, so older scenes load unchanged. `hasEffects` ignores Pixel size unless Dither is on, and Invert unless there's a tint (it's keyed on `tintAmount`).
+Each has a neutral value in `EFFECT_RANGE`: 0, `false`, and 2 for Pixel size (2 puts about 500 bitmap pixels across the artboard, close to an original Mac screen). `lib/objectEffects.ts` adds them to `BaseFabricObject.customProperties` and puts the neutral values on the prototype. That way they serialise with the scene, undo snapshots, clones (paste) and JSON, including "no effect". None is named after a Fabric member: Fabric's text classes already have a `blur()` method, and a property called `blur` once put a function into the scene. `getEffects(obj)` reads them back, clamped, with neutral values for anything missing or invalid, so older scenes load unchanged. `hasEffects` ignores Pixel size and Remove white unless Dither is on, and Invert unless there's a tint (it's keyed on `tintAmount`).
 
 Rendering wraps the base `render` (text, images, paths and shapes all reach it). The order is brightness/contrast/saturation → noise → dither → tint → blur.
 - **Filters only** (blur and the colour adjustments): `filterString` builds `brightness(1 + b/100) contrast(1 + c/100) saturate(1 + s/100) blur(r)`, skipping neutral functions.
@@ -192,9 +192,9 @@ Rendering wraps the base `render` (text, images, paths and shapes all reach it).
   5. The result is drawn once, blurred, at the box, with the object's composite operation.
 - **Dither** (`ditherBitmap`):
   - The object is rendered into a small canvas in its *local frame*: centred, turned with it, one canvas pixel per Pixel size, grown so no side passes 2048. It is drawn with its opacity at 1 (opacity applies when the bitmap is drawn back) and under the colour-adjustment filter, so Brightness and Contrast act as the threshold.
-  - Then `getImageData` → `addNoise` (per cell, before dithering, for stipple) → `atkinson` → `putImageData`. `atkinson` uses Rec. 709 luminance against 128 and gives 1/8 of the error to each of six neighbours; the dropped 2/8 gives MacPaint's blown-out highlights. Alpha ≥ 128 becomes opaque black or white, and anything fainter becomes transparent.
+  - Then `getImageData` → `addNoise` (per cell, before dithering, for stipple) → `atkinson` → `putImageData`. `atkinson` uses Rec. 709 luminance against 128 and gives 1/8 of the error to each of six neighbours; the dropped 2/8 gives MacPaint's blown-out highlights. Alpha ≥ 128 becomes opaque black or white, and anything fainter becomes transparent. With `ditherKnockout` (Remove white) the white pixels are written transparent instead. The error diffusion is unchanged, so the same pixels come out black. The rest of `renderLayered` needs nothing extra: tint's `destination-in` mask keeps the gaps clear, so with Remove white only an inverted tint changes the layer's colour, and blur softens the black pixels into transparency.
   - `drawInFrame` draws it back with `imageSmoothingEnabled = false`. The cells stay square at any zoom and in the export, move and rotate with the layer, and keep their size on the artboard when it's scaled.
-  - The bitmap is cached per object in a `WeakMap`. Its key covers the adjustments, noise, cell size, grid size, scale, skew, flip, shadow, the image `src`, and a content version that the wrap bumps whenever it sees `object.dirty` before rendering (Fabric sets it for fill, path and src changes). Moving, rotating, selecting or zooming never re-dithers.
+  - The bitmap is cached per object in a `WeakMap`. Its key covers the adjustments, noise, Remove white, cell size, grid size, scale, skew, flip, shadow, the image `src`, and a content version that the wrap bumps whenever it sees `object.dirty` before rendering (Fabric sets it for fill, path and src changes). Moving, rotating, selecting or zooming never re-dithers.
   - A tainted canvas (an image without CORS headers) makes `getImageData` throw. That layer then renders without dither.
 - `noise(x, y)` is an integer hash of the cell coordinates with a fixed seed. Every layer shares the field in its own coordinates, so grain is the same across redraws, reloads and browsers.
 
@@ -202,16 +202,19 @@ Rendering wraps the base `render` (text, images, paths and shapes all reach it).
 - the e2e suite runs the filter-based interactive tests in Chromium and the unsupported one in WebKit;
 - the noise and dither tests run in both.
 
-The popout (`LayerActions` → `EffectsControls`) shows Blur for every layer. Layers that aren't text also get:
-- Brightness, Contrast and Saturation;
-- Tint (a strength slider, a colour input, and an Invert switch, disabled at 0% strength);
-- Noise;
-- a Dither switch (`role="switch"`; Dither and Invert share `EffectSwitch`);
-- Pixel size, disabled while Dither is off.
+The popout (`LayerActions` → `EffectsControls`) groups its controls into framed sections (`EffectSection`: a Reshaped `View` with `borderColor="neutral-faded"`, square in the dmbk theme, `role="group"` named "<Section> controls"). Every layer gets the Blur section. Layers that aren't text also get:
+- **Colour:** Brightness, Contrast and Saturation;
+- **Tint:** a strength slider, a colour input, and an Invert switch, disabled at 0% strength;
+- **Noise;**
+- **Dither:** a Dither switch (`role="switch"`), Pixel size, and a Remove white switch. Pixel size and Remove white are disabled while Dither is off, and Remove white keeps its setting. Dither, Invert and Remove white share `EffectSwitch`.
 
-Each row has its own Reset, disabled at neutral. Tint's neutral is 0% with Invert off: its Reset (`EffectSlider`'s `atNeutral` / `onReset`) sets `tintInvert` false live and then commits strength 0, so both land in one "Tint" step and the colour is kept; Dither's Reset only switches it off, so Pixel size is kept.
+The section names differ from the controls' own groups ("Blur", "Tint", "Noise"), so role queries stay unambiguous. Reshaped draws the hairline on the section's `::before`. The popout passes `fallbackAdjustLayout`, so in a short window it shrinks to fit and scrolls; it is about 590 px tall.
 
-Sliders call `setActiveItemEffect(key, value, false)` live (render only, with the mid-drag value held in local state) and `(key, value, true)` on release, which runs `commit(EFFECT_LABEL[key])`. The colour is live on `input` and commits "Tint" on the native `change`. The Dither switch commits "Dither" at once, and Invert commits "Tint invert". `CanvasEditor` tags slider commits with `history.markMerge(label)`, so a run of arrow-key steps within 1 s is one undo step, the way nudges are. Resets, colour picks and the switch never merge.
+Each control has its own Reset, disabled at neutral. A control whose neutral covers a sub-option takes `atNeutral` / `onReset` overrides (`EffectSlider`, and `EffectSwitch`'s `reset`):
+- Tint's neutral is 0% with Invert off. Its Reset sets `tintInvert` false live, then commits strength 0, so both land in one "Tint" step and the colour is kept.
+- Dither's neutral is off with Remove white off. Its Reset sets `ditherKnockout` false live, then commits Dither off, as one "Dither" step. It stays enabled while only Remove white is on, and Pixel size is kept.
+
+Sliders call `setActiveItemEffect(key, value, false)` live (render only, with the mid-drag value held in local state) and `(key, value, true)` on release, which runs `commit(EFFECT_LABEL[key])`. The colour is live on `input` and commits "Tint" on the native `change`. The Dither switch commits "Dither" at once, Invert commits "Tint invert", and Remove white commits "Remove white". `CanvasEditor` tags slider commits with `history.markMerge(label)`, so a run of arrow-key steps within 1 s is one undo step, the way nudges are. Resets, colour picks and the switch never merge.
 
 ## 1g. Visual language and colour mode (`design/`)
 

@@ -319,6 +319,42 @@ describe('tint invert property', () => {
   })
 })
 
+describe('Remove white property', () => {
+  it('serialises off on every object type and keeps a set value through clone', async () => {
+    for (const object of [new Rect(), new Textbox('A'), new Path('M 0 0 L 10 10')] as FabricObject[]) {
+      expect(object.toObject()).toMatchObject({ ditherKnockout: false })
+    }
+    const rect = new Rect({ width: 10, height: 10 })
+    rect.set({ ditherEnabled: true, ditherKnockout: true } as never)
+    expect(getEffects(await rect.clone())).toEqual(fx({ ditherEnabled: true, ditherKnockout: true }))
+  })
+
+  it('round-trips through undo snapshots', () => {
+    const canvas = new Canvas(document.createElement('canvas'), { width: 100, height: 100 })
+    // Without Dither, so the canvas's scheduled render stays off the pixel path (no DOMMatrix in jsdom).
+    const rect = new Rect({ width: 10, height: 10 })
+    canvas.add(rect)
+    const before = captureSnapshot(canvas)
+    rect.set({ ditherKnockout: true } as never)
+    const after = captureSnapshot(canvas)
+    restoreSnapshot(canvas, before)
+    expect(getEffects(rect).ditherKnockout).toBe(false)
+    restoreSnapshot(canvas, after)
+    expect(getEffects(rect).ditherKnockout).toBe(true)
+  })
+
+  it('reads anything but true as off, and loads off from a scene without it', async () => {
+    for (const ditherKnockout of ['true', 1, null, undefined]) {
+      expect(getEffects({ ditherKnockout }).ditherKnockout).toBe(false)
+    }
+    expect(getEffects(await Rect.fromObject({ width: 5, height: 5 })).ditherKnockout).toBe(false)
+  })
+
+  it("doesn't count as an effect on its own: it only matters while dithering", () => {
+    expect(hasEffects(fx({ ditherKnockout: true }))).toBe(false)
+  })
+})
+
 describe('noise and dither properties', () => {
   it('serialise at neutral and keep set values through clone', async () => {
     expect(new Rect().toObject()).toMatchObject({ noiseAmount: 0, ditherEnabled: false, ditherPixelSize: 2 })
@@ -424,6 +460,39 @@ describe('atkinson', () => {
   })
 })
 
+describe('atkinson knockout', () => {
+  /** A w×1 buffer running from black to white, the first pixel transparent. */
+  const gradient = (w: number) => {
+    const data = new Uint8ClampedArray(w * 4)
+    for (let x = 0; x < w; x++) {
+      const grey = Math.round((x / (w - 1)) * 255)
+      data.set([grey, grey, grey, x === 0 ? 0 : 255], x * 4)
+    }
+    return data
+  }
+
+  it('clears the white pixels and leaves the same pixels black', () => {
+    const plain = gradient(64)
+    const knocked = gradient(64)
+    atkinson(plain, 64, 1)
+    atkinson(knocked, 64, 1, true)
+    let black = 0
+    for (let i = 0; i < 64; i++) {
+      const p = i * 4
+      if (plain[p + 3] === 0) {
+        expect(knocked[p + 3]).toBe(0)
+      } else if (plain[p] === 0) {
+        black++
+        expect([knocked[p], knocked[p + 3]]).toEqual([0, 255])
+      } else {
+        expect(knocked[p + 3]).toBe(0)
+      }
+    }
+    expect(black).toBeGreaterThan(0)
+    expect(knocked[3]).toBe(0)
+  })
+})
+
 describe('dither cache', () => {
   afterEach(() => setFiltersSupportedForTests(null))
 
@@ -456,6 +525,11 @@ describe('dither cache', () => {
     rect.set({ ditherPixelSize: 4 } as never)
     rect.render(ctx)
     expect(runs() - start).toBe(4)
+
+    rect.set({ ditherKnockout: true } as never)
+    rect.render(ctx)
+    rect.render(ctx)
+    expect(runs() - start).toBe(5)
   })
 
   it('draws in the same place while the layer is part of a selection', () => {
