@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { ActiveSelection, Canvas, Path, Rect, Shadow, Textbox } from 'fabric'
+import { ActiveSelection, Canvas, type FabricObject, Path, Rect, Shadow, Textbox } from 'fabric'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { captureSnapshot, restoreSnapshot } from './history'
@@ -239,6 +239,38 @@ describe('render wrap', () => {
     expect(filters).toEqual([])
   })
 
+  it('multiplies the tint colour in, or screens it with Invert', () => {
+    setFiltersSupportedForTests(true)
+    const { ctx } = context()
+    ctx.canvas.width = ctx.canvas.height = 100
+    // Record every composite operation set on the offscreen layers' contexts.
+    const ops: string[] = []
+    const getContext = HTMLCanvasElement.prototype.getContext
+    const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement, ...args) {
+      const real = getContext.apply(this, args as never) as CanvasRenderingContext2D
+      return new Proxy(real, {
+        set: (t, key, value) => {
+          if (key === 'globalCompositeOperation') ops.push(value)
+          return Reflect.set(t, key, value)
+        },
+      })
+    } as typeof getContext)
+    const tintOps = (props: object) => {
+      ops.length = 0
+      const rect = new Rect({ left: 50, top: 50, width: 10, height: 10 })
+      rect.set(props as never)
+      rect.render(ctx)
+      return ops.filter((op) => op === 'multiply' || op === 'screen')
+    }
+    try {
+      expect(tintOps({ tintAmount: 100 })).toEqual(['multiply'])
+      expect(tintOps({ tintAmount: 100, tintInvert: true })).toEqual(['screen'])
+      expect(tintOps({ tintAmount: 0, tintInvert: true })).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('draws a tinted object through the offscreen layers', () => {
     setFiltersSupportedForTests(true)
     const { ctx } = context()
@@ -250,6 +282,40 @@ describe('render wrap', () => {
     rect.render(ctx)
     // Only the finished layer reaches the canvas; the mixing happens offscreen.
     expect(draw).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('tint invert property', () => {
+  it('serialises off on every object type and keeps a set value through clone', async () => {
+    for (const object of [new Rect(), new Textbox('A'), new Path('M 0 0 L 10 10')] as FabricObject[]) {
+      expect(object.toObject()).toMatchObject({ tintInvert: false })
+    }
+    const rect = new Rect({ width: 10, height: 10 })
+    rect.set({ tintAmount: 80, tintInvert: true } as never)
+    expect(getEffects(await rect.clone())).toEqual(fx({ tintAmount: 80, tintInvert: true }))
+  })
+
+  it('round-trips through undo snapshots', () => {
+    const canvas = new Canvas(document.createElement('canvas'), { width: 100, height: 100 })
+    const rect = new Rect({ width: 10, height: 10 })
+    rect.set({ tintAmount: 50 } as never)
+    canvas.add(rect)
+    const before = captureSnapshot(canvas)
+    rect.set({ tintInvert: true } as never)
+    const after = captureSnapshot(canvas)
+    restoreSnapshot(canvas, before)
+    expect(getEffects(rect).tintInvert).toBe(false)
+    restoreSnapshot(canvas, after)
+    expect(getEffects(rect).tintInvert).toBe(true)
+  })
+
+  it('reads anything but true as off, and loads off from a scene without it', async () => {
+    for (const tintInvert of ['true', 1, null, undefined]) expect(getEffects({ tintInvert }).tintInvert).toBe(false)
+    expect(getEffects(await Rect.fromObject({ width: 5, height: 5 })).tintInvert).toBe(false)
+  })
+
+  it("doesn't count as an effect on its own: it only matters with a tint", () => {
+    expect(hasEffects(fx({ tintInvert: true }))).toBe(false)
   })
 })
 

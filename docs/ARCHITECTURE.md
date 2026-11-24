@@ -172,11 +172,11 @@ Selected objects can be rotated from Fabric's top handle (`mtr`) or by dragging 
 Every object carries its effects as custom properties:
 - `blurAmount` (artboard units, 0–50);
 - `brightnessAmount`, `contrastAmount` and `saturationAmount` (−100…100);
-- `tintAmount` (0–100 %) with `tintColor` (`#rrggbb`);
+- `tintAmount` (0–100 %) with `tintColor` (`#rrggbb`) and `tintInvert` (boolean);
 - `noiseAmount` (0–100);
 - `ditherEnabled` (boolean) with `ditherPixelSize` (artboard units per bitmap pixel, 1–8).
 
-Each has a neutral value in `EFFECT_RANGE`: 0, `false`, and 2 for Pixel size (2 puts about 500 bitmap pixels across the artboard, close to an original Mac screen). `lib/objectEffects.ts` adds them to `BaseFabricObject.customProperties` and puts the neutral values on the prototype. That way they serialise with the scene, undo snapshots, clones (paste) and JSON, including "no effect". None is named after a Fabric member: Fabric's text classes already have a `blur()` method, and a property called `blur` once put a function into the scene. `getEffects(obj)` reads them back, clamped, with neutral values for anything missing or invalid, so older scenes load unchanged. `hasEffects` ignores Pixel size unless Dither is on.
+Each has a neutral value in `EFFECT_RANGE`: 0, `false`, and 2 for Pixel size (2 puts about 500 bitmap pixels across the artboard, close to an original Mac screen). `lib/objectEffects.ts` adds them to `BaseFabricObject.customProperties` and puts the neutral values on the prototype. That way they serialise with the scene, undo snapshots, clones (paste) and JSON, including "no effect". None is named after a Fabric member: Fabric's text classes already have a `blur()` method, and a property called `blur` once put a function into the scene. `getEffects(obj)` reads them back, clamped, with neutral values for anything missing or invalid, so older scenes load unchanged. `hasEffects` ignores Pixel size unless Dither is on, and Invert unless there's a tint (it's keyed on `tintAmount`).
 
 Rendering wraps the base `render` (text, images, paths and shapes all reach it). The order is brightness/contrast/saturation → noise → dither → tint → blur.
 - **Filters only** (blur and the colour adjustments): `filterString` builds `brightness(1 + b/100) contrast(1 + c/100) saturate(1 + s/100) blur(r)`, skipping neutral functions.
@@ -187,7 +187,7 @@ Rendering wraps the base `render` (text, images, paths and shapes all reach it).
 - **Tint, noise and dither** aren't filter functions. `renderLayered` composes the layer offscreen and draws it once:
   1. It works out a box in device pixels (`tintBox`) and renders the source into a reused offscreen canvas. The box covers the object's bounds plus shadow (or, for noise and dither, the layer's local frame), through the context transform, plus 3 × the blur radius, clipped to the canvas. The source is either the dithered bitmap or the object rendered under the brightness/contrast/saturation filter.
   2. **Noise without dither:** a grey texture (one opaque pixel per artboard unit, `128 + noise(x, y) × 127`, cached per size) is blended over a copy with `overlay` at `amount / 100`. It is placed in the layer's local frame with smoothing off, so the grain is stable, follows the layer and scales with zoom, while the layer itself keeps full resolution.
-  3. **Tint:** a copy is made in the layer's shading × the tint colour (`grayscale(1)`, then a `multiply` fill).
+  3. **Tint:** a copy is made in the layer's shading × the tint colour (`grayscale(1)`, then a `multiply` fill: white becomes the colour, black stays black). With `tintInvert` the fill is `screen` instead (`1 − (1 − grey)(1 − colour)`): black becomes the colour and white stays white, so a dithered layer turns into the colour on white.
   4. Each copy is masked to the source with `destination-in`, then mixed back with `source-atop` (noise at full strength, tint by its strength). This keeps the source's alpha, so transparent areas stay clear and the mix is exact on soft edges.
   5. The result is drawn once, blurred, at the box, with the object's composite operation.
 - **Dither** (`ditherBitmap`):
@@ -204,14 +204,14 @@ Rendering wraps the base `render` (text, images, paths and shapes all reach it).
 
 The popout (`LayerActions` → `EffectsControls`) shows Blur for every layer. Layers that aren't text also get:
 - Brightness, Contrast and Saturation;
-- Tint (a strength slider plus a colour input);
+- Tint (a strength slider, a colour input, and an Invert switch, disabled at 0% strength);
 - Noise;
-- a Dither switch (`role="switch"`);
+- a Dither switch (`role="switch"`; Dither and Invert share `EffectSwitch`);
 - Pixel size, disabled while Dither is off.
 
-Each row has its own Reset, disabled at neutral. Tint's Reset only zeroes the strength, so the colour is kept; Dither's Reset only switches it off, so Pixel size is kept.
+Each row has its own Reset, disabled at neutral. Tint's neutral is 0% with Invert off: its Reset (`EffectSlider`'s `atNeutral` / `onReset`) sets `tintInvert` false live and then commits strength 0, so both land in one "Tint" step and the colour is kept; Dither's Reset only switches it off, so Pixel size is kept.
 
-Sliders call `setActiveItemEffect(key, value, false)` live (render only, with the mid-drag value held in local state) and `(key, value, true)` on release, which runs `commit(EFFECT_LABEL[key])`. The colour is live on `input` and commits "Tint" on the native `change`. The Dither switch commits "Dither" at once. `CanvasEditor` tags slider commits with `history.markMerge(label)`, so a run of arrow-key steps within 1 s is one undo step, the way nudges are. Resets, colour picks and the switch never merge.
+Sliders call `setActiveItemEffect(key, value, false)` live (render only, with the mid-drag value held in local state) and `(key, value, true)` on release, which runs `commit(EFFECT_LABEL[key])`. The colour is live on `input` and commits "Tint" on the native `change`. The Dither switch commits "Dither" at once, and Invert commits "Tint invert". `CanvasEditor` tags slider commits with `history.markMerge(label)`, so a run of arrow-key steps within 1 s is one undo step, the way nudges are. Resets, colour picks and the switch never merge.
 
 ## 1g. Visual language and colour mode (`design/`)
 

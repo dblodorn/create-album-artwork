@@ -257,7 +257,11 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
   const effects = { ...getEffects(object), ...dragging, ...(picking ? { tintColor: picking } : {}) }
   // Blur, the colour adjustments and tint need canvas filters; noise and dither don't.
   const supported = canvasFiltersSupported()
-  const slider = (key: EffectKey, caption: string, unit = '', disabled = !supported) => (
+  const change = (key: EffectKey) => (value: number, final: boolean, merge?: boolean) => {
+    setDragging(({ [key]: _, ...rest }) => (final ? rest : { ...rest, [key]: value }))
+    onEffect(key, value, final, merge)
+  }
+  const slider = (key: EffectKey, caption: string, unit = '', disabled = !supported, reset?: Partial<ResetProps>) => (
     <EffectSlider
       key={key}
       name={key}
@@ -265,10 +269,8 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
       unit={unit}
       value={effects[key]}
       disabled={disabled}
-      onChange={(value, final, merge) => {
-        setDragging(({ [key]: _, ...rest }) => (final ? rest : { ...rest, [key]: value }))
-        onEffect(key, value, final, merge)
-      }}
+      onChange={change(key)}
+      {...reset}
     />
   )
   return (
@@ -278,7 +280,14 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
         <>
           {COLOUR_KEYS.map((key) => slider(key, EFFECT_LABEL[key]))}
           <View gap={1}>
-            {slider('tintAmount', 'Tint', '%')}
+            {slider('tintAmount', 'Tint', '%', !supported, {
+              // Tint's neutral is 0% with Invert off; one Reset clears both as one "Tint" step.
+              atNeutral: effects.tintAmount === 0 && !effects.tintInvert,
+              onReset: () => {
+                onEffect('tintInvert', false, false)
+                change('tintAmount')(0, true)
+              },
+            })}
             <TintColor
               value={effects.tintColor}
               disabled={!supported}
@@ -287,9 +296,22 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
                 onEffect('tintColor', value, final)
               }}
             />
+            <EffectSwitch
+              name="tintInvert"
+              caption="Invert"
+              checked={effects.tintInvert}
+              disabled={!supported || effects.tintAmount === 0}
+              onChange={(value) => onEffect('tintInvert', value, true)}
+            />
           </View>
           {slider('noiseAmount', 'Noise', '', false)}
-          <DitherSwitch checked={effects.ditherEnabled} onChange={(value) => onEffect('ditherEnabled', value, true)} />
+          <EffectSwitch
+            name="ditherEnabled"
+            caption="Dither"
+            checked={effects.ditherEnabled}
+            onChange={(value) => onEffect('ditherEnabled', value, true)}
+            reset
+          />
           {slider('ditherPixelSize', 'Pixel size', '', !effects.ditherEnabled)}
         </>
       )}
@@ -302,6 +324,9 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
   )
 }
 
+/** Overrides for a control whose neutral state is more than its slider value (Tint: 0% and Invert off). */
+type ResetProps = { atNeutral: boolean; onReset: () => void }
+
 function EffectSlider({
   name,
   caption,
@@ -309,6 +334,8 @@ function EffectSlider({
   value,
   disabled,
   onChange,
+  atNeutral,
+  onReset,
 }: {
   name: EffectKey
   caption: string
@@ -316,7 +343,7 @@ function EffectSlider({
   value: number
   disabled: boolean
   onChange: (value: number, final: boolean, merge?: boolean) => void
-}) {
+} & Partial<ResetProps>) {
   const { min, max, neutral } = EFFECT_RANGE[name]
   return (
     // Reshaped labels the range input by its value tooltip, so the row names the control.
@@ -326,10 +353,11 @@ function EffectSlider({
           {caption} · <span aria-live="polite">{`${value}${unit}`}</span>
         </Text>
         <Pill
-          disabled={value === neutral || disabled}
+          disabled={(atNeutral ?? value === neutral) || disabled}
           onClick={(e) => {
             keepFocusInPopout(e)
-            onChange(neutral, true)
+            if (onReset) onReset()
+            else onChange(neutral, true)
           }}
           attributes={{ 'aria-label': `Reset ${caption}` }}
         >
@@ -350,31 +378,51 @@ function EffectSlider({
   )
 }
 
-/** Dither on/off, with its own Reset (off); Pixel size is kept either way. */
-function DitherSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+/**
+ * An effect's on/off switch: Dither (with its own Reset, off; Pixel size is
+ * kept either way) and Tint's Invert (no Reset: Tint's clears it).
+ */
+function EffectSwitch({
+  name,
+  caption,
+  checked,
+  disabled = false,
+  onChange,
+  reset = false,
+}: {
+  name: 'ditherEnabled' | 'tintInvert'
+  caption: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (value: boolean) => void
+  reset?: boolean
+}) {
   return (
     <View direction="row" justify="space-between" align="center">
       <Switch
-        name="ditherEnabled"
+        name={name}
         size="small"
         checked={checked}
+        disabled={disabled}
         inputAttributes={{ role: 'switch' }}
         onChange={({ checked }) => onChange(checked)}
       >
         <Text variant="caption-1" color="neutral-faded">
-          Dither
+          {caption}
         </Text>
       </Switch>
-      <Pill
-        disabled={!checked}
-        onClick={(e) => {
-          keepFocusInPopout(e)
-          onChange(false)
-        }}
-        attributes={{ 'aria-label': 'Reset Dither' }}
-      >
-        Reset
-      </Pill>
+      {reset && (
+        <Pill
+          disabled={!checked}
+          onClick={(e) => {
+            keepFocusInPopout(e)
+            onChange(false)
+          }}
+          attributes={{ 'aria-label': `Reset ${caption}` }}
+        >
+          Reset
+        </Pill>
+      )}
     </View>
   )
 }

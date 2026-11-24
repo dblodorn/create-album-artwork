@@ -201,6 +201,9 @@ export class EffectsPopout {
   get ditherSwitch() {
     return this.page.getByRole('switch', { name: 'Dither', exact: true })
   }
+  get invertSwitch() {
+    return this.page.getByRole('switch', { name: 'Invert', exact: true })
+  }
   get unsupportedNote() {
     return this.page.getByText("Blur and colour adjustments aren't supported in this browser.")
   }

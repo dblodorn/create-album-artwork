@@ -94,6 +94,39 @@ test.describe('colour adjustments', () => {
     expect((await effectsOf(page)).tintColor).toBe('#0055ff')
   })
 
+  test('tint Invert: needs strength, is one named step, and Tint\'s Reset clears it', async ({ page }) => {
+    await loadAndSelect(page, rectWith({ tintColor: '#cc0000' }))
+    const { effects } = pages(page)
+    await effects.open()
+    await expect(effects.invertSwitch).not.toBeChecked()
+    await expect(effects.invertSwitch).toBeDisabled()
+
+    await effects.drag('Tint', 0, 0.8)
+    const strength = (await effectsOf(page)).tintAmount
+    // Wait for the drag's own step: a click in the same frame would join it.
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Tint')
+    await expect(effects.invertSwitch).toBeEnabled()
+    await effects.invertSwitch.click({ force: true })
+    await expect.poll(async () => (await effectsOf(page)).tintInvert).toBe(true)
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Tint invert')
+
+    // Reset clears strength and Invert as one "Tint" step, keeping the colour.
+    await effects.reset('Tint').click()
+    await expect.poll(async () => (await effectsOf(page)).tintAmount).toBe(0)
+    expect(await effectsOf(page)).toMatchObject({ tintInvert: false, tintColor: '#cc0000' })
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Tint')
+    await expect(effects.reset('Tint')).toBeDisabled()
+
+    await effects.close()
+    await blurFocus(page)
+    await shortcut(page, 'Mod+Z')
+    await expect.poll(async () => (await effectsOf(page)).tintAmount).toBe(strength)
+    expect((await effectsOf(page)).tintInvert).toBe(true)
+    await shortcut(page, 'Mod+Z')
+    await expect.poll(async () => (await effectsOf(page)).tintInvert).toBe(false)
+    expect((await effectsOf(page)).tintAmount).toBe(strength)
+  })
+
   test('a text layer offers Blur only', async ({ page }) => {
     await addText(page)
     const { effects, layers } = pages(page)
@@ -104,6 +137,7 @@ test.describe('colour adjustments', () => {
       await expect(effects.group(name)).toHaveCount(0)
     }
     await expect(effects.tintColour).toHaveCount(0)
+    await expect(effects.invertSwitch).toHaveCount(0)
   })
 
   test("arrow keys on a slider change it and don't nudge the layer", async ({ page }) => {
@@ -192,6 +226,7 @@ test.describe('effects in the scene', () => {
     saturationAmount: -100,
     tintAmount: 40,
     tintColor: '#3366cc',
+    tintInvert: true,
     noiseAmount: 25,
     ditherEnabled: true,
     ditherPixelSize: 4,
@@ -233,6 +268,7 @@ test.describe('effects in the scene', () => {
       saturationAmount: 0,
       tintAmount: 0,
       tintColor: '#ff0000',
+      tintInvert: false,
       noiseAmount: 0,
       ditherEnabled: false,
       ditherPixelSize: 2,
@@ -249,6 +285,8 @@ test.describe('effects in the scene', () => {
     await expect(effects.slider('Brightness')).toBeDisabled()
     await expect(effects.reset('Saturation')).toBeDisabled()
     await expect(effects.tintColour).toBeDisabled()
+    await expect(effects.invertSwitch).toBeDisabled()
+    await expect(effects.invertSwitch).toBeChecked()
     // Noise and dither don't need filters.
     await expect(effects.slider('Noise')).toBeEnabled()
     await expect(effects.ditherSwitch).toBeEnabled()

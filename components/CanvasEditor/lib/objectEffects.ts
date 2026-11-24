@@ -26,15 +26,15 @@ export type EffectKey =
   | 'noiseAmount'
   | 'ditherPixelSize'
 
-export type Effects = Record<EffectKey, number> & { tintColor: string; ditherEnabled: boolean }
+export type Effects = Record<EffectKey, number> & { tintColor: string; tintInvert: boolean; ditherEnabled: boolean }
 
 /**
  * Sets one effect; `final` (once per drag, and for Reset) records the undo
  * step. `merge` (slider commits only) lets quick runs of arrow-key presses
- * become one step; Reset, colour picks and the Dither switch are always their own.
+ * become one step; Reset, colour picks and the switches are always their own.
  */
 export type OnEffect = (
-  key: EffectKey | 'tintColor' | 'ditherEnabled',
+  key: EffectKey | 'tintColor' | 'tintInvert' | 'ditherEnabled',
   value: number | string | boolean,
   final: boolean,
   merge?: boolean
@@ -55,13 +55,14 @@ export const EFFECT_RANGE: Record<EffectKey, { min: number; max: number; neutral
 export const EFFECT_KEYS = Object.keys(EFFECT_RANGE) as EffectKey[]
 
 /** The undo step's name; also the history merge key, lowercased. */
-export const EFFECT_LABEL: Record<EffectKey | 'tintColor' | 'ditherEnabled', string> = {
+export const EFFECT_LABEL: Record<EffectKey | 'tintColor' | 'tintInvert' | 'ditherEnabled', string> = {
   blurAmount: 'Blur',
   brightnessAmount: 'Brightness',
   contrastAmount: 'Contrast',
   saturationAmount: 'Saturation',
   tintAmount: 'Tint',
   tintColor: 'Tint',
+  tintInvert: 'Tint invert',
   noiseAmount: 'Noise',
   ditherEnabled: 'Dither',
   ditherPixelSize: 'Pixel size',
@@ -77,6 +78,7 @@ export const NEUTRAL_EFFECTS: Effects = {
   saturationAmount: 0,
   tintAmount: 0,
   tintColor: DEFAULT_TINT,
+  tintInvert: false,
   noiseAmount: 0,
   ditherEnabled: false,
   ditherPixelSize: EFFECT_RANGE.ditherPixelSize.neutral,
@@ -100,6 +102,7 @@ export function getEffects(object: unknown): Effects {
   const effects = { ...NEUTRAL_EFFECTS }
   for (const key of EFFECT_KEYS) effects[key] = clampEffect(key, source[key])
   effects.tintColor = normaliseColor(source.tintColor) ?? DEFAULT_TINT
+  effects.tintInvert = source.tintInvert === true
   effects.ditherEnabled = source.ditherEnabled === true
   return effects
 }
@@ -464,7 +467,8 @@ type Render = (ctx: CanvasRenderingContext2D) => void
  * composite operation). In order:
  * 1. the source: the dithered bitmap, or the object rendered with brightness/contrast/saturation;
  * 2. noise without dither: grey grain blended in with `overlay`, in the object's frame;
- * 3. tint: a copy in the object's shading × the tint colour, mixed in by strength;
+ * 3. tint: a copy in the object's shading × the tint colour (screened instead
+ *    with Invert, so the colour goes to the dark end), mixed in by strength;
  * Steps 2 and 3 build the copy in the second layer, mask it to the source's
  * alpha (`destination-in`) and mix it back with `source-atop`, so transparent
  * areas stay clear and soft edges keep their alpha.
@@ -542,7 +546,8 @@ function renderLayered(
       copy.filter = 'grayscale(1)'
       copy.drawImage(source.canvas, 0, 0, w, h, 0, 0, w, h)
       copy.filter = 'none'
-      copy.globalCompositeOperation = 'multiply'
+      // multiply: white → the colour, black stays black. screen (Invert): black → the colour, white stays white.
+      copy.globalCompositeOperation = e.tintInvert ? 'screen' : 'multiply'
       copy.fillStyle = e.tintColor
       copy.fillRect(0, 0, w, h)
       copy.globalCompositeOperation = 'source-over'
@@ -565,7 +570,7 @@ export function installObjectEffects() {
   installed = true
 
   const Base = BaseFabricObject as unknown as { customProperties: string[] }
-  const props = [...EFFECT_KEYS, 'tintColor', 'ditherEnabled']
+  const props = [...EFFECT_KEYS, 'tintColor', 'tintInvert', 'ditherEnabled']
   Base.customProperties = [...Base.customProperties, ...props.filter((p) => !Base.customProperties.includes(p))]
 
   const proto = BaseFabricObject.prototype as unknown as Effects & { render: Render }
