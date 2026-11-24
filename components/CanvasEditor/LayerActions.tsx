@@ -34,14 +34,23 @@ const guard = {
   onClick: stop,
 }
 
-// Closing a popout returns focus to its trigger, inside the Layers panel's
-// shortcuts-off region, so ⌘Z etc. would do nothing until the canvas was
-// clicked. Let go of focus if it's still on the trigger; if the person closed
-// the popout by moving focus elsewhere, leave it there.
+// Closing a popout returns focus to what had it when the popout opened: the
+// trigger, or in Safari (where clicking a button doesn't focus it) the layer
+// row. Both are inside the Layers panel's shortcuts-off region, so ⌘Z etc.
+// would do nothing until the canvas was clicked. Let go of focus if it's on
+// either; if the person closed the popout by moving focus elsewhere, leave it
+// there. Reshaped can return focus after onAfterClose, so check again a frame later.
 const RELEASE_ATTR = 'data-layer-popout-trigger'
-const releaseTriggerFocus = () => {
+const releaseFocusNow = () => {
   const active = document.activeElement
-  if (active instanceof HTMLElement && active.hasAttribute(RELEASE_ATTR)) active.blur()
+  if (!(active instanceof HTMLElement)) return
+  const isTrigger = active.hasAttribute(RELEASE_ATTR)
+  const isTriggersRow = active.getAttribute('role') === 'option' && !!active.querySelector(`[${RELEASE_ATTR}]`)
+  if (isTrigger || isTriggersRow) active.blur()
+}
+const releaseTriggerFocus = () => {
+  releaseFocusNow()
+  requestAnimationFrame(releaseFocusNow)
 }
 
 /**
@@ -243,10 +252,15 @@ export function LayerActions({
 // Brightness/contrast/saturation and tint only apply to layers that aren't text.
 const COLOUR_KEYS = ['brightnessAmount', 'contrastAmount', 'saturationAmount'] as const
 
-/** Moves focus to the popout's first slider, so it stays in the popout when a Reset disables itself. */
+/**
+ * Moves focus to the popout's first enabled slider, so it stays in the popout
+ * when a Reset disables itself (or the control it sits by). Disabled ones are
+ * skipped: Blur is disabled without canvas filters, and focus left on nothing
+ * falls to the page, where Escape deselects the layer instead of just closing.
+ */
 const keepFocusInPopout = (e: { currentTarget: HTMLElement }) => {
   const popout = e.currentTarget.closest('[data-editor-shortcuts="off"]')
-  popout?.querySelector<HTMLElement>('input[type="range"]')?.focus()
+  popout?.querySelector<HTMLElement>('input[type="range"]:not(:disabled)')?.focus()
 }
 
 function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect: OnEffect }) {

@@ -2,10 +2,34 @@ import { type Page, expect } from '@playwright/test'
 
 import { hook } from '../fixtures'
 
-/** Screen point for an artboard point (0–1000 units), from the artboard's box. */
+/**
+ * The artboard's on-screen box once it has stopped moving. Right after a load
+ * or a tab switch the view can still be re-centring (on slow runners for a few
+ * frames), and a box read mid-way puts drags in the wrong place.
+ */
+async function settledArtboardBox(page: Page) {
+  const box = await page.locator('canvas.upper-canvas').evaluate(async (canvas) => {
+    const read = () => {
+      const r = canvas.getBoundingClientRect()
+      return { x: r.x, y: r.y, width: r.width, height: r.height }
+    }
+    const frames = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+    let last = read()
+    for (let i = 0; i < 60; i++) {
+      await frames()
+      const next = read()
+      if (JSON.stringify(next) === JSON.stringify(last)) return next
+      last = next
+    }
+    return last
+  })
+  if (!box.width) throw new Error('artboard not visible')
+  return box
+}
+
+/** Screen point for an artboard point (0–1000 units), from the artboard's settled box. */
 export async function artboardPoint(page: Page, x: number, y: number) {
-  const box = await page.locator('canvas.upper-canvas').boundingBox()
-  if (!box) throw new Error('artboard not visible')
+  const box = await settledArtboardBox(page)
   return { x: box.x + (x / 1000) * box.width, y: box.y + (y / 1000) * box.height }
 }
 
@@ -32,9 +56,5 @@ export async function objectCenter(page: Page, index: number) {
 export const blurFocus = (page: Page) =>
   page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
 
-/** The artboard's on-screen box. */
-export async function artboardBox(page: Page) {
-  const box = await page.locator('canvas.upper-canvas').boundingBox()
-  if (!box) throw new Error('artboard not visible')
-  return box
-}
+/** The artboard's on-screen box, once it has stopped moving. */
+export const artboardBox = settledArtboardBox
