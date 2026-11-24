@@ -2,6 +2,7 @@ import { ActiveSelection, type FabricObject } from 'fabric'
 import { useCallback, useMemo, useRef, useState } from 'react'
 
 import { Clipboard, type PasteMode } from './clipboard'
+import { isLocked } from './layerLock'
 import {
   type CommandState,
   type MenuCommandId,
@@ -48,6 +49,7 @@ export function useEditCommands({
     clipboardEmpty,
     stackIndex: single ? objects.indexOf(single) : null,
     stackSize: objects.length,
+    locked: selected.some(isLocked),
   })
 
   const { transaction } = history
@@ -116,7 +118,8 @@ export function useEditCommands({
   const nudge = useCallback(
     (dx: number, dy: number) => {
       const target = canvas?.getActiveObject()
-      if (!editor || !target) return
+      // A locked layer doesn't move; the key is still the editor's (no page scroll).
+      if (!editor || !target || isLocked(target)) return
       target.set({ left: target.left + dx, top: target.top + dy })
       target.setCoords()
       markMerge('nudge')

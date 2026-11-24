@@ -136,6 +136,8 @@ export type CommandContext = {
   // (0 = back), and the number of objects on the canvas.
   stackIndex: number | null
   stackSize: number
+  // The selection is a locked layer: it can be copied and arranged, not cut.
+  locked: boolean
 }
 
 export type CommandState = { label: string; enabled: boolean }
@@ -163,7 +165,7 @@ export function commandState(ctx: CommandContext): Record<MenuCommandId, Command
   const enabled: Record<MenuCommandId, boolean> = {
     undo: ctx.canUndo,
     redo: ctx.canRedo,
-    cut: ctx.selectionCount > 0,
+    cut: ctx.selectionCount > 0 && !ctx.locked,
     copy: ctx.selectionCount > 0,
     paste: !ctx.clipboardEmpty,
     pasteInFront: !ctx.clipboardEmpty,

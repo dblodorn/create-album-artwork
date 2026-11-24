@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FabricObject } from 'fabric'
 
+import { isLocked } from './layerLock'
 import { EFFECT_LABEL, type EffectKey, clampEffect, normaliseColor } from './objectEffects'
 import { type RotateBy, nextAngle } from './rotate'
 import { scaleFactor } from './scale'
@@ -43,7 +44,7 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
   // change the longer side by 1 artboard unit.
   const scaleActiveItemUpDown = useCallback(
     (direction: 'up' | 'down', coarse = true) => {
-      if (!editor || !activeItem) return
+      if (!editor || !activeItem || isLocked(activeItem)) return
       const longest = Math.max(activeItem.getScaledWidth(), activeItem.getScaledHeight())
       const factor = scaleFactor(longest, direction, coarse)
       if (factor === 1) return
@@ -57,7 +58,7 @@ export function useEditorItems(editor: FabricJSEditor | undefined) {
   // Rotates about the centre (objects use originX/originY 'center').
   const rotateActiveItem = useCallback(
     (by: RotateBy) => {
-      if (!editor || !activeItem) return
+      if (!editor || !activeItem || isLocked(activeItem)) return
       const next = nextAngle(activeItem.angle ?? 0, by)
       if (next === activeItem.angle) return
       activeItem.rotate(next)

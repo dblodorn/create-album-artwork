@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DOCK_SNAP,
+  EDGE,
+  TOP_LIMIT,
   clampPosition,
+  defaultPanelState,
   inDropZone,
   panAfterResize,
   readPanelState,
@@ -30,9 +33,36 @@ describe('readPanelState', () => {
     expect(readPanelState('{"docked":false,"x":null,"y":null}').docked).toBe(true)
   })
 
+  it('uses the fallback only when nothing readable is stored', () => {
+    const floating = { docked: false, x: 8, y: 56 }
+    expect(readPanelState(null, floating)).toEqual(floating)
+    expect(readPanelState('not json', floating)).toEqual(floating)
+    expect(readPanelState('{"docked":true,"x":null,"y":null}', floating)).toEqual({ docked: true, x: null, y: null })
+    expect(readPanelState('{"docked":false,"x":300,"y":200}', floating)).toEqual({ docked: false, x: 300, y: 200 })
+  })
+
   it('round-trips through serializePanelState', () => {
     const state = { docked: false, x: 10, y: 60 }
     expect(readPanelState(serializePanelState(state))).toEqual(state)
+  })
+})
+
+describe('defaultPanelState', () => {
+  it('docks at 768 px and wider', () => {
+    expect(defaultPanelState('left', 768)).toEqual({ docked: true, x: null, y: null })
+    expect(defaultPanelState('right', 1440).docked).toBe(true)
+  })
+
+  it('floats Tools top left and Layers bottom right on a narrow viewport', () => {
+    const tools = defaultPanelState('left', 390)
+    const layers = defaultPanelState('right', 390)
+    expect(tools).toEqual({ docked: false, x: EDGE, y: TOP_LIMIT + EDGE })
+    expect(layers.docked).toBe(false)
+    // Clamped into the window's bottom-right corner once measured.
+    expect(clampPosition({ x: layers.x!, y: layers.y! }, { width: 280, height: 300 }, { width: 390, height: 844 })).toEqual({
+      x: 390 - 280 - EDGE,
+      y: 844 - 300 - EDGE,
+    })
   })
 })
 

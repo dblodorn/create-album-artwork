@@ -92,6 +92,7 @@ describe('commandState', () => {
     clipboardEmpty: true,
     stackIndex: null,
     stackSize: 0,
+    locked: false,
     ...overrides,
   })
 
@@ -111,6 +112,12 @@ describe('commandState', () => {
     const state = commandState(ctx({ selectionCount: 2, clipboardEmpty: false }))
     expect(state.cut.enabled && state.copy.enabled).toBe(true)
     expect(state.paste.enabled && state.pasteInBack.enabled && state.pasteInPlace.enabled).toBe(true)
+  })
+
+  it('disables only Cut for a locked layer', () => {
+    const state = commandState(ctx({ selectionCount: 1, stackIndex: 1, stackSize: 3, clipboardEmpty: false, locked: true }))
+    expect(state.cut.enabled).toBe(false)
+    expect(state.copy.enabled && state.paste.enabled && state.bringToFront.enabled && state.sendToBack.enabled).toBe(true)
   })
 
   it('needs exactly one selected object to arrange', () => {

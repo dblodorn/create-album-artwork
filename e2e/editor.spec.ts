@@ -31,13 +31,15 @@ test.describe('editor', () => {
     await addText(page)
     await expect(layers.rows).toHaveText(['Text', 'Image'])
 
-    // Drag the image row above the text row.
+    // Drag the image row above the text row, by its middle (the toggles at
+    // the start of a row don't drag it).
     const from = (await layers.rows.nth(1).boundingBox())!
     const to = (await layers.rows.nth(0).boundingBox())!
-    await page.mouse.move(from.x + 40, from.y + from.height / 2)
+    const x = from.x + from.width / 2
+    await page.mouse.move(x, from.y + from.height / 2)
     await page.mouse.down()
     for (let i = 1; i <= 10; i++) {
-      await page.mouse.move(from.x + 40, from.y + from.height / 2 - ((from.y - to.y + 8) * i) / 10)
+      await page.mouse.move(x, from.y + from.height / 2 - ((from.y - to.y + 8) * i) / 10)
     }
     await page.mouse.up()
     await expect(layers.rows).toHaveText(['Image', 'Text'])

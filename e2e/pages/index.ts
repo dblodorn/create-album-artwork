@@ -144,13 +144,27 @@ export class LayersPanel {
   get selected() {
     return this.list.getByRole('option', { selected: true })
   }
+  row(row: number | 'first' | 'last') {
+    return row === 'first' ? this.rows.first() : row === 'last' ? this.rows.last() : this.rows.nth(row)
+  }
   /**
-   * Clicks a row by its thumbnail end: a selected row's actions take up the
-   * other half, so a click at its centre could land on one.
+   * Clicks a row on its thumbnail, just past the show/hide and lock toggles: a
+   * selected row's actions take up the other end, so a click at its centre
+   * could land on one.
    */
   async select(row: number | 'first' | 'last', modifiers: ('Shift')[] = []) {
-    const target = row === 'first' ? this.rows.first() : row === 'last' ? this.rows.last() : this.rows.nth(row)
-    await target.click({ position: { x: 12, y: 12 }, modifiers })
+    const target = this.row(row)
+    const lock = (await this.lockToggle(row).boundingBox())!
+    const box = (await target.boundingBox())!
+    await target.click({ position: { x: lock.x + lock.width - box.x + 12, y: box.height / 2 }, modifiers })
+  }
+  /** The row's show/hide toggle ("Hide layer" / "Show layer"). */
+  visibilityToggle(row: number | 'first' | 'last') {
+    return this.row(row).getByRole('button', { name: /^(Hide|Show) layer$/ })
+  }
+  /** The row's lock toggle ("Lock layer" / "Unlock layer"). */
+  lockToggle(row: number | 'first' | 'last') {
+    return this.row(row).getByRole('button', { name: /^(Lock|Unlock) layer$/ })
   }
   /** Shift-click: add the row to the selection, or take it out. */
   async shiftSelect(row: number) {

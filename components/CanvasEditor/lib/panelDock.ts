@@ -18,16 +18,31 @@ export const UNDOCK_THRESHOLD = 4
 // How close to its edge a dragged panel's pointer must be to show the drop zone.
 export const DOCK_SNAP = 48
 
+// Below this width (CSS px, at load) docked columns leave the artboard too little room.
+export const NARROW_VIEWPORT = 768
+
 const DOCKED: StoredPanel = { docked: true, x: null, y: null }
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 /**
- * Reads a stored panel entry. Anything missing or invalid is docked. Entries
- * from before docking ({ x, y } only) are docked too, keeping x/y as the spot
- * the panel floats to when pulled out.
+ * Where a panel starts when nothing is stored: docked, or on a narrow
+ * viewport floating in its corner (Tools top left, Layers bottom right; the
+ * huge spot is clamped into the window once the panel is measured).
  */
-export function readPanelState(raw: string | null): StoredPanel {
-  if (!raw) return DOCKED
+export function defaultPanelState(side: DockSide, viewportWidth: number): StoredPanel {
+  if (viewportWidth >= NARROW_VIEWPORT) return DOCKED
+  return side === 'left'
+    ? { docked: false, x: EDGE, y: TOP_LIMIT + EDGE }
+    : { docked: false, x: Number.MAX_SAFE_INTEGER, y: Number.MAX_SAFE_INTEGER }
+}
+
+/**
+ * Reads a stored panel entry. Nothing stored (or unreadable) gives `fallback`
+ * (see `defaultPanelState`). Entries from before docking ({ x, y } only) are
+ * docked, keeping x/y as the spot the panel floats to when pulled out.
+ */
+export function readPanelState(raw: string | null, fallback: StoredPanel = DOCKED): StoredPanel {
+  if (!raw) return fallback
   try {
     const parsed = JSON.parse(raw)
     const x = isNum(parsed?.x) ? parsed.x : null
@@ -35,7 +50,7 @@ export function readPanelState(raw: string | null): StoredPanel {
     const docked = parsed?.docked === false && x !== null && y !== null ? false : true
     return { docked, x, y }
   } catch {
-    return DOCKED
+    return fallback
   }
 }
 

@@ -4,6 +4,13 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-24 — Hide and lock layers; floating panels on phones
+
+- Every row in the Layers panel has an eye and a padlock. The eye hides a layer: it's left off the canvas and the PNG export, and clicks go to whatever is below it. Click it again to show the layer.
+- The padlock locks a layer so stray clicks and drags can't move it. It can't be picked on the canvas, and the arrow keys and Delete leave it alone. You can still select it from its row to change its effects or move it up and down the list.
+- Hidden and locked layers are saved with the file, and undo works for both. The Layers panel is a little wider to make room.
+- On a phone, Tools and Layers now start floating in the corners instead of docked, so the artboard gets the whole width. Dock or move them and that is remembered.
+
 ## 2026-11-24 — Remove white from dithered layers; effects in sections
 
 - Dither has a new Remove white switch, under Pixel size. With it on, the white pixels of a dithered layer become see-through, so only the black dots are left over whatever is behind.

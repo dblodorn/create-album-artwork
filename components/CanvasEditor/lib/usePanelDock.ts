@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { type StoredPanel, readPanelState, serializePanelState } from './panelDock'
+import { type DockSide, type StoredPanel, defaultPanelState, readPanelState, serializePanelState } from './panelDock'
 
 const storageKey = (id: string) => `canvas-editor-panel:${id}`
 
-const read = (id: string): StoredPanel => {
+// Nothing stored: docked, or floating on a narrow viewport. That default is
+// never written; only the person's own docking and moving are remembered.
+const read = (id: string, side: DockSide): StoredPanel => {
+  const fallback = defaultPanelState(side, window.innerWidth)
   try {
-    return readPanelState(localStorage.getItem(storageKey(id)))
+    return readPanelState(localStorage.getItem(storageKey(id)), fallback)
   } catch {
-    return readPanelState(null)
+    return fallback
   }
 }
 
@@ -25,16 +28,16 @@ const write = (id: string, state: StoredPanel) => {
  * CanvasEditor (not the panel) because the layout sizes the dock spacers from
  * `docked` and `width`.
  */
-export function usePanelDock(id: string) {
+export function usePanelDock(id: string, side: DockSide) {
   // Docked until mounted: storage isn't readable during the server render.
   const [state, setState] = useState<StoredPanel>({ docked: true, x: null, y: null })
   const [ready, setReady] = useState(false)
   const [width, setWidth] = useState(0)
 
   useEffect(() => {
-    setState(read(id))
+    setState(read(id, side))
     setReady(true)
-  }, [id])
+  }, [id, side])
 
   // Floats the panel at (x, y) and remembers it.
   const undock = useCallback(
