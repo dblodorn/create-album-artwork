@@ -21,11 +21,11 @@ async function threeTexts(page: Page) {
 
 /** Selects the object at `index` (back to front) through its Layers row. */
 async function select(page: Page, index: number) {
-  const rows = pages(page).layers.rows
+  const { layers } = pages(page)
   // The panel rebuilds a frame after the canvas changes: wait until it matches.
   const count = (await objects(page)).length
-  await expect(rows).toHaveCount(count)
-  await rows.nth(count - 1 - index).click()
+  await expect(layers.rows).toHaveCount(count)
+  await layers.select(count - 1 - index)
   await expect.poll(() => hook(page, 'selection')).toEqual([index])
   await blurFocus(page)
 }

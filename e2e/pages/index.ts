@@ -144,6 +144,29 @@ export class LayersPanel {
   get selected() {
     return this.list.getByRole('option', { selected: true })
   }
+  /**
+   * Clicks a row by its thumbnail end: a selected row's actions take up the
+   * other half, so a click at its centre could land on one.
+   */
+  async select(row: number | 'first' | 'last', modifiers: ('Shift')[] = []) {
+    const target = row === 'first' ? this.rows.first() : row === 'last' ? this.rows.last() : this.rows.nth(row)
+    await target.click({ position: { x: 12, y: 12 }, modifiers })
+  }
+  /** Shift-click: add the row to the selection, or take it out. */
+  async shiftSelect(row: number) {
+    await this.select(row, ['Shift'])
+  }
+  /** Shown while several layers are selected. */
+  get mergeBar() {
+    return this.page.getByRole('region', { name: 'Selected layers' })
+  }
+  get mergeButton() {
+    return this.mergeBar.getByRole('button', { name: 'Merge', exact: true })
+  }
+  /** The selected row's Rasterize action. */
+  get rasterizeButton() {
+    return this.list.getByRole('button', { name: 'Rasterize', exact: true })
+  }
 }
 
 type EffectName = 'Blur' | 'Brightness' | 'Contrast' | 'Saturation' | 'Tint' | 'Noise' | 'Pixel size'
@@ -157,6 +180,11 @@ export class EffectsPopout {
   async open() {
     await this.button.click()
     await expect(this.group('Blur')).toBeVisible()
+  }
+  /** Escape, then wait until it's gone: focus returns to its trigger as it closes. */
+  async close() {
+    await this.page.keyboard.press('Escape')
+    await expect(this.group('Blur')).toBeHidden()
   }
   group(name: EffectName) {
     return this.page.getByRole('group', { name, exact: true })

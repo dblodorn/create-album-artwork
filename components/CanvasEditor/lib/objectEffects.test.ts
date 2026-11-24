@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { Canvas, Path, Rect, Shadow, Textbox } from 'fabric'
+import { ActiveSelection, Canvas, Path, Rect, Shadow, Textbox } from 'fabric'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { captureSnapshot, restoreSnapshot } from './history'
@@ -390,6 +390,28 @@ describe('dither cache', () => {
     rect.set({ ditherPixelSize: 4 } as never)
     rect.render(ctx)
     expect(runs() - start).toBe(4)
+  })
+
+  it('draws in the same place while the layer is part of a selection', () => {
+    setFiltersSupportedForTests(true)
+    const canvas = new Canvas(document.createElement('canvas'), { width: 300, height: 300 })
+    const ctx = canvas.getContext()
+    Object.assign(ctx, { getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) })
+    const draw = vi.fn()
+    Object.assign(ctx, { drawImage: draw })
+    const rect = new Rect({ left: 200, top: 200, width: 20, height: 20, fill: '#888' })
+    rect.set({ ditherEnabled: true } as never)
+    const other = new Rect({ left: 40, top: 40, width: 20, height: 20 })
+    canvas.add(rect, other)
+    const destination = () => draw.mock.calls.at(-1)!.slice(5, 7)
+
+    rect.render(ctx)
+    const alone = destination()
+    // In a selection the rect's left/top are relative to the selection's centre.
+    canvas.setActiveObject(new ActiveSelection([rect, other], { canvas }))
+    expect(rect.left).not.toBe(200)
+    rect.render(ctx)
+    expect(destination()).toEqual(alone)
   })
 
   it('dithers where canvas filters are unsupported', () => {

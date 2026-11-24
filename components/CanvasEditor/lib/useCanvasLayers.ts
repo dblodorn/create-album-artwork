@@ -43,8 +43,10 @@ function thumbnailFor(object: FabricObject) {
 // every change (batched to one rebuild per frame), never kept as a copy.
 export function useCanvasLayers(editor: FabricJSEditor | undefined) {
   const [layers, setLayers] = useState<Layer[]>([])
-  // A multi-object selection has no single row, so it reads as null.
-  const [activeObject, setActiveObject] = useState<FabricObject | null>(null)
+  // The canvas selection: one object, or a multi-selection's objects.
+  const [selected, setSelected] = useState<FabricObject[]>([])
+  // The object most recently added to the selection, to scroll its row into view.
+  const [lastSelected, setLastSelected] = useState<FabricObject | null>(null)
 
   useEffect(() => {
     if (!editor) return
@@ -66,8 +68,10 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
             thumbnail: thumbnailFor(object),
           }))
       )
-      const active = canvas.getActiveObject()
-      setActiveObject(active && !(active instanceof ActiveSelection) ? active : null)
+      const active = canvas.getActiveObjects()
+      setSelected((current) =>
+        current.length === active.length && current.every((object, i) => object === active[i]) ? current : active
+      )
     }
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(rebuild)
@@ -77,6 +81,10 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
       schedule()
     }
 
+    const onSelection = ({ selected: added }: { selected?: FabricObject[] }) => {
+      if (added?.length) setLastSelected(added[added.length - 1])
+      schedule()
+    }
     const onTargetChanged = ({ target }: { target?: FabricObject }) => {
       if (target instanceof ActiveSelection) {
         target.getObjects().forEach((object) => thumbnails.delete(object))
@@ -95,8 +103,8 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
     canvas.on('object:removed', schedule)
     canvas.on('object:modified', onTargetChanged)
     canvas.on('text:changed', onTargetChanged)
-    canvas.on('selection:created', schedule)
-    canvas.on('selection:updated', schedule)
+    canvas.on('selection:created', onSelection)
+    canvas.on('selection:updated', onSelection)
     canvas.on('selection:cleared', schedule)
     schedule()
 
@@ -106,8 +114,8 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
       canvas.off('object:removed', schedule)
       canvas.off('object:modified', onTargetChanged)
       canvas.off('text:changed', onTargetChanged)
-      canvas.off('selection:created', schedule)
-      canvas.off('selection:updated', schedule)
+      canvas.off('selection:created', onSelection)
+      canvas.off('selection:updated', onSelection)
       canvas.off('selection:cleared', schedule)
       if (frame) cancelAnimationFrame(frame)
     }
@@ -118,6 +126,25 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
       if (!editor) return
       editor.canvas.setActiveObject(object)
       editor.canvas.requestRenderAll()
+    },
+    [editor]
+  )
+
+  // Shift-click: add the object to the selection, or take it out, keeping
+  // canvas order so it matches a Shift-click selection made on the canvas.
+  const toggle = useCallback(
+    (object: FabricObject) => {
+      if (!editor) return
+      const { canvas } = editor
+      const current = new Set(canvas.getActiveObjects())
+      if (current.has(object)) current.delete(object)
+      else current.add(object)
+      const next = canvas.getObjects().filter((o) => current.has(o))
+      canvas.discardActiveObject()
+      if (next.length === 1) canvas.setActiveObject(next[0])
+      else if (next.length > 1) canvas.setActiveObject(new ActiveSelection(next, { canvas }))
+      if (next.includes(object)) setLastSelected(object)
+      canvas.requestRenderAll()
     },
     [editor]
   )
@@ -136,5 +163,7 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
     [editor]
   )
 
-  return { layers, activeObject, select, moveTo }
+  // Exactly one object selected (the inline actions' target), else null.
+  const single = selected.length === 1 ? selected[0] : null
+  return { layers, selected, single, lastSelected, select, toggle, moveTo }
 }
