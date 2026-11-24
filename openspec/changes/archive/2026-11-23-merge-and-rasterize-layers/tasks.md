@@ -33,4 +33,5 @@
 - [x] 5.2 Add a `CHANGELOG.md` entry ("Merge layers and rasterize text"); verify `/api/changelog` lists it
 - [x] 5.3 Run `npm run typecheck`, `npm test`, `npm run build` and `npm run test:e2e` (let Playwright build); verify all pass
   - Typecheck, 211 unit tests, the build and the full e2e suite (104 passed, 6 skipped) all pass. Under repeated full-suite runs, WebKit flakes the earlier effects test "Dither switches on as one step…" about once in two or three runs. It flakes just as often on `main` (2 failures in 3 runs), so it predates this change. Its undo stack is sometimes replaced after the test's first steps; the cause isn't found yet. `loadAndSelect` now waits for the hook's `ready`, and `effects.close()` waits for the popout to close, which removed every other flake.
-- [ ] 5.4 At archive: write the new `layer-rasterize` spec's Purpose if the sync leaves a placeholder, and check the `canvas-layers` Purpose still fits; verify `openspec validate --specs` passes
+- [x] 5.4 At archive: write the new `layer-rasterize` spec's Purpose if the sync leaves a placeholder, and check the `canvas-layers` Purpose still fits; verify `openspec validate --specs` passes
+  - `layer-rasterize` took the Purpose from the delta. The `canvas-layers` Purpose now mentions selecting several layers and merging them. `openspec validate --specs`: 16 passed.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Lets someone making album artwork see every object on the canvas in stacking order, pick any of them (even ones hidden under others), and change what sits above what by dragging or with the keyboard.
+Lets someone making album artwork see every object on the canvas in stacking order, pick any of them (even ones hidden under others) or several at once, change what sits above what by dragging or with the keyboard, and merge a multi-selection into one image.
 
 ## Requirements
 
@@ -41,7 +41,9 @@ Each row SHALL show a small thumbnail of its object as it looks on the canvas, a
 - **THEN** their rows read "Image" and "Drawing", each with a thumbnail of that object
 
 ### Requirement: Selection stays in sync with the canvas
-Clicking a row SHALL select that object on the canvas, including an object fully covered by others, and SHALL NOT change the stacking order. Whenever an object is selected on the canvas by any means, its row SHALL be highlighted and scrolled into view in the panel. When the selection is cleared, no row SHALL be highlighted. At most one row SHALL be highlighted at a time. Selecting from the panel SHALL leave freehand drawing mode, as selecting with the Select tool does.
+Clicking a row SHALL select that object on the canvas, on its own, including an object fully covered by others, and SHALL NOT change the stacking order. **Shift-clicking** a row SHALL add that object to the current selection, or remove it if it is already selected, one row at a time; there is no range selection. Shift-clicking a row with nothing selected SHALL select that object alone. Removing the second-to-last object SHALL leave the remaining one selected on its own. Shift+Enter or Shift+Space on a focused row SHALL toggle it the same way.
+
+Whenever objects are selected on the canvas by any means (a click, a Shift-click, a drag-select or a row), every selected object's row SHALL be highlighted, and the most recently selected one SHALL be scrolled into view. When the selection is cleared, no row SHALL be highlighted. A multi-object selection made from the panel SHALL be the same selection as one made on the canvas: it moves, nudges, copies and deletes together. Selecting from the panel SHALL leave freehand drawing mode, as selecting with the Select tool does. A Shift-click SHALL NOT start a row drag.
 
 #### Scenario: Selecting a buried object
 - **WHEN** an image is completely covered by a larger image above it and the person clicks the lower image's row
@@ -54,6 +56,30 @@ Clicking a row SHALL select that object on the canvas, including an object fully
 #### Scenario: Clearing the selection
 - **WHEN** the person presses Escape or clicks the empty workspace
 - **THEN** no row in the panel is highlighted
+
+#### Scenario: Shift-click adds a row
+- **WHEN** a text box is selected and the person Shift-clicks an image's row
+- **THEN** both rows are highlighted and the canvas shows one selection around both objects
+
+#### Scenario: Shift-click removes a row
+- **WHEN** three layers are selected and the person Shift-clicks one of their rows
+- **THEN** that row is no longer highlighted and the other two stay selected
+
+#### Scenario: No range selection
+- **WHEN** the top row is selected and the person Shift-clicks the fourth row
+- **THEN** only the first and fourth rows are selected, not the rows between
+
+#### Scenario: Plain click resets
+- **WHEN** three layers are selected and the person clicks another row without Shift
+- **THEN** only that row's object is selected
+
+#### Scenario: Canvas multi-selection highlights rows
+- **WHEN** the person Shift-clicks two objects on the canvas
+- **THEN** both of their rows are highlighted
+
+#### Scenario: Multi-selection acts together
+- **WHEN** two layers are selected from the panel and the person presses → on the canvas
+- **THEN** both objects move 1 unit right together
 
 ### Requirement: Reorder by drag and drop
 The person SHALL be able to drag a row to a new position in the list. While dragging, the panel SHALL show where the row will land. Dropping it SHALL move that object to the matching position in the canvas stacking order, leave every other object's relative order unchanged, and keep the dragged object selected. Dropping a row where it started, or releasing it outside the list, SHALL change nothing.
@@ -143,19 +169,24 @@ When exactly one object is selected, its row in the Layers panel SHALL show thes
   The popout stays open while the buttons are used, so the person can scale or rotate repeatedly, and closes on Escape or a click outside.
 - **Effects**, with an icon suggesting magic, which opens a popout of the same kind holding the effect controls (see the `object-effects` capability). The first effect is Blur.
 - **Remove background**, on image rows only (see the `background-removal` capability).
+- **Rasterize**, on rows that aren't images: text, shapes and drawings (see the `layer-rasterize` capability).
 - **Delete**, which deletes the object, the same as Backspace.
 
-Rows that aren't selected SHALL show no actions. No row shows actions when several objects are selected or when nothing is selected. The panel SHALL NOT offer buttons for moving a layer up or down; stacking order is changed by dragging rows, Alt+↑/↓, the Arrange shortcuts and the Edit menu.
+Rows that aren't selected SHALL show no actions. No row shows actions when several objects are selected or when nothing is selected; several selected objects get the Merge bar instead. The panel SHALL NOT offer buttons for moving a layer up or down; stacking order is changed by dragging rows, Alt+↑/↓, the Arrange shortcuts and the Edit menu.
 
-While freehand drawing is on, the actions SHALL be shown disabled. Each action SHALL have an accessible name and a tooltip naming its shortcut. Every action SHALL be undoable like the same action taken any other way. Using an action, or the Transform popout, SHALL NOT change the selection, start a row drag, or let its keys reach the canvas shortcuts.
+While freehand drawing is on, the actions SHALL be shown disabled. Each action SHALL have an accessible name and a tooltip naming its shortcut. Every action SHALL be undoable like the same action taken any other way. Using an action, or the Transform popout, SHALL NOT change the selection, start a row drag, or let its keys reach the canvas shortcuts. Rasterize is the exception to keeping the selection: it replaces the object, so the new image is selected.
 
 #### Scenario: Selected row shows its actions
 - **WHEN** a text box is selected
-- **THEN** its row shows Transform, Effects and Delete, with no Remove background, and no other row shows actions
+- **THEN** its row shows Transform, Effects, Rasterize and Delete, with no Remove background, and no other row shows actions
 
 #### Scenario: Image row
 - **WHEN** an image is selected
-- **THEN** its row shows Transform, Effects, Remove background and Delete
+- **THEN** its row shows Transform, Effects, Remove background and Delete, with no Rasterize
+
+#### Scenario: Shape and drawing rows
+- **WHEN** a shape or a drawing is selected
+- **THEN** its row shows Transform, Effects, Rasterize and Delete
 
 #### Scenario: Scale from the popout
 - **WHEN** an image whose longer side is 300 units is selected and the person opens Transform and clicks Scale up twice
@@ -188,3 +219,18 @@ While freehand drawing is on, the actions SHALL be shown disabled. Each action S
 #### Scenario: Drawing mode
 - **WHEN** freehand drawing is on and an object is selected
 - **THEN** that row's actions are shown disabled
+
+### Requirement: Merge bar for several selected layers
+While two or more objects are selected, by any means, the Layers panel SHALL show a bar at its top, directly below the panel's title bar and above the rows, holding a **Merge** button (see the `layer-rasterize` capability). The bar SHALL say how many layers are selected. While fewer than two objects are selected, the bar SHALL NOT be shown, and the rows SHALL NOT move when it appears or disappears beyond the bar's own height. While freehand drawing is on, Merge SHALL be shown disabled. The Merge button SHALL have an accessible name and a tooltip. Using it SHALL NOT let its keys reach the canvas shortcuts.
+
+#### Scenario: Bar appears for two layers
+- **WHEN** one layer is selected and the person Shift-clicks a second row
+- **THEN** a bar reading "2 layers" with a Merge button appears below the Layers title bar
+
+#### Scenario: Bar hides below two
+- **WHEN** two layers are selected and the person Shift-clicks one of them again
+- **THEN** one layer stays selected and the bar disappears
+
+#### Scenario: Canvas multi-selection
+- **WHEN** the person drag-selects three objects on the canvas
+- **THEN** the bar shows "3 layers" with a Merge button
