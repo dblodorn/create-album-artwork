@@ -4,6 +4,10 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-23 — Undo right after closing a popout in Safari
+
+- Fixed: in Safari, pressing Escape to close the Effects or Transform popout and then ⌘Z sometimes did nothing until you clicked the canvas. Escape after a Reset could also deselect the layer. Both now work straight away.
+
 ## 2026-11-23 — Invert tint
 
 - Tint has a new Invert switch in the Effects popout. With it on, the tint colour goes to the dark parts of a layer instead of the light parts: black becomes the colour and white stays white.
