@@ -10,6 +10,7 @@ What changed in the album artwork editor, newest first. Each entry is a
 - With two or more layers selected, a Merge button appears at the top of the Layers panel. It flattens them into one image that looks exactly the same, with effects baked in, placed where the frontmost one was.
 - Text, shapes and drawings have a new Rasterize button that turns the layer into an image, so text can take dither, noise and the colour effects.
 - Merge and Rasterize are one undo step each; undo brings back the original, editable layers.
+- Fixed: layers with Dither, Noise or Tint no longer jump out of place while they're selected together with other layers.
 
 ## 2026-11-23 — Noise and 1-bit dither for layers
 

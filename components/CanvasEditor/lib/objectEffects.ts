@@ -307,16 +307,32 @@ function shadowReach(object: FabricObject) {
 const MAX_CELLS = 2048
 
 /**
+ * What Fabric's own `transform(ctx)` applies before the object's matrix: the
+ * group's, while that group hasn't applied it itself. An ActiveSelection's
+ * children are drawn by the canvas one by one, with positions relative to the
+ * selection, so this is the selection's matrix; otherwise identity.
+ */
+function groupMatrix(object: FabricObject, ctx: CanvasRenderingContext2D): TMat2D {
+  const group = object.group
+  const full = group && (!group._transformDone || (object.canvas && ctx === (object.canvas as { contextTop?: unknown }).contextTop))
+  return full ? group.calcTransformMatrix() : [1, 0, 0, 1, 0, 0]
+}
+
+/**
  * The layer's own frame: centred on the object and turned with it, but not
- * scaled, so one unit is one artboard unit. `size` is the scaled object plus
+ * scaled, so one unit is one artboard unit (or a selection's unit while it's
+ * being scaled). `group` is from `groupMatrix`. `size` is the scaled object plus
  * its shadow; `cell` is artboard units per bitmap pixel (grown if the grid
  * would pass MAX_CELLS).
  */
-function localFrame(object: FabricObject, cellSize: number) {
+function localFrame(object: FabricObject, cellSize: number, group: TMat2D) {
   const center = object.getRelativeCenterPoint()
   const placement = util.multiplyTransformMatrices(
-    [1, 0, 0, 1, center.x, center.y],
-    util.createRotateMatrix({ angle: object.angle })
+    group,
+    util.multiplyTransformMatrices(
+      [1, 0, 0, 1, center.x, center.y],
+      util.createRotateMatrix({ angle: object.angle })
+    )
   )
   const dims = object._getTransformedDimensions()
   const reach = shadowReach(object) * Math.max(Math.abs(object.scaleX), Math.abs(object.scaleY))
@@ -463,7 +479,8 @@ function renderLayered(
   const t = ctx.getTransform()
   const parent: TMat2D = [t.a, t.b, t.c, t.d, t.e, t.f]
   const margin = filters ? 3 * blurRadius(e.blurAmount, t) : 0
-  const frame = needsPixels(e) ? localFrame(object, e.ditherEnabled ? e.ditherPixelSize : 1) : null
+  const group = groupMatrix(object, ctx)
+  const frame = needsPixels(e) ? localFrame(object, e.ditherEnabled ? e.ditherPixelSize : 1, group) : null
   const bitmap = e.ditherEnabled && frame ? ditherBitmap(object, e, frame, filters, render) : null
 
   let box: Box | null
@@ -472,7 +489,7 @@ function renderLayered(
   } else {
     const size = object._getNonTransformedDimensions()
     const reach = shadowReach(object)
-    const matrix = util.multiplyTransformMatrices(parent, object.calcOwnMatrix())
+    const matrix = util.multiplyTransformMatrices(parent, util.multiplyTransformMatrices(group, object.calcOwnMatrix()))
     box = tintBox(size.x / 2 + reach, size.y / 2 + reach, matrix, margin, ctx.canvas.width, ctx.canvas.height)
   }
   if (!box) return
