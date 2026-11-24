@@ -238,16 +238,15 @@ test.describe('noise and dither', () => {
     await expect(effects.reset('Dither')).toBeDisabled()
 
     await effects.close()
-    // Blur before every undo: in WebKit the popout hands focus back to the
-    // Layers row (shortcuts off) when the first undo re-renders it.
     await blurFocus(page)
     await shortcut(page, 'Mod+Z')
     await expect.poll(async () => (await effectsOf(page)).ditherEnabled).toBe(true)
     expect((await effectsOf(page)).ditherKnockout).toBe(true)
-    // Back past the off/on flips to the switch's own step, one undo at a time.
+    // Back past the off/on flips to the switch's own step, one undo at a time,
+    // with no clicking in between: the first undo unmounts the row's actions,
+    // and focus mustn't land on the row (where shortcuts are off).
     for (const label of ['Dither', 'Dither', 'Remove white']) {
       await expect.poll(() => hook(page, 'undoLabel')).toBe(label)
-      await blurFocus(page)
       await shortcut(page, 'Mod+Z')
     }
     await expect.poll(async () => (await effectsOf(page)).ditherKnockout).toBe(false)
