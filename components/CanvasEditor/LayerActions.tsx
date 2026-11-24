@@ -24,7 +24,7 @@ import { RemoveBackgroundButton } from './RemoveBackgroundButton'
 // popout can close; the row ignores it and the canvas shortcuts skip keys
 // from shortcuts-off regions.
 const stop = (e: SyntheticEvent) => e.stopPropagation()
-const guard = {
+export const rowControlGuard = {
   onMouseDown: stop,
   onTouchStart: stop,
   onPointerDown: stop,
@@ -69,6 +69,7 @@ export function LayerActions({
   onRemoveBackground,
   onRasterize,
   rasterizing,
+  locked,
 }: {
   object: FabricObject
   isDrawing: boolean
@@ -80,11 +81,13 @@ export function LayerActions({
   onRasterize: () => void
   // A merge or rasterize is running.
   rasterizing: boolean
+  // A locked layer keeps Effects; nothing that moves, replaces or removes it.
+  locked: boolean
 }) {
   // Re-read on every render; the row re-renders after each commit.
   const angle = Math.round(nextAngle(object.angle ?? 0, 0))
   return (
-    <span {...guard} style={{ display: 'inline-flex', alignItems: 'center' }}>
+    <span {...rowControlGuard} style={{ display: 'inline-flex', alignItems: 'center' }}>
       {/* One button triggers both the hint and the popout, so their refs and
           handlers are merged. The hint sits on top, clear of the popout below. */}
       <Popover position="bottom-end" onAfterClose={releaseTriggerFocus}>
@@ -97,7 +100,7 @@ export function LayerActions({
                   rounded
                   variant="ghost"
                   icon={Transform}
-                  disabled={isDrawing}
+                  disabled={isDrawing || locked}
                   attributes={{
                     ...mergeTriggerAttributes(hintAttributes, popoverAttributes),
                     'aria-label': 'Transform',
@@ -109,7 +112,7 @@ export function LayerActions({
           )}
         </Popover.Trigger>
         {/* Rendered in a portal, outside the panel's shortcuts-off region. */}
-        <Popover.Content attributes={{ ...SHORTCUTS_OFF, ...guard }}>
+        <Popover.Content attributes={{ ...SHORTCUTS_OFF, ...rowControlGuard }}>
           <View gap={2}>
             <View gap={1}>
               <Text variant="caption-1" color="neutral-faded">
@@ -205,7 +208,7 @@ export function LayerActions({
             </Hint>
           )}
         </Popover.Trigger>
-        <Popover.Content attributes={{ ...SHORTCUTS_OFF, ...guard }}>
+        <Popover.Content attributes={{ ...SHORTCUTS_OFF, ...rowControlGuard }}>
           <EffectsControls object={object} onEffect={onEffect} />
         </Popover.Content>
       </Popover>
@@ -213,6 +216,7 @@ export function LayerActions({
         <RemoveBackgroundButton
           activeItem={object}
           isDrawing={isDrawing}
+          locked={locked}
           onOpen={onRemoveBackground}
           variant="ghost"
           tooltipPosition="bottom"
@@ -227,7 +231,7 @@ export function LayerActions({
               variant="ghost"
               icon={Rasterize}
               onClick={onRasterize}
-              disabled={isDrawing || rasterizing}
+              disabled={isDrawing || rasterizing || locked}
               attributes={{ ...attributes, 'aria-label': 'Rasterize' }}
             />
           )}
@@ -241,7 +245,7 @@ export function LayerActions({
             variant="ghost"
             icon={Trash}
             onClick={onDelete}
-            disabled={isDrawing}
+            disabled={isDrawing || locked}
             attributes={{ ...attributes, 'aria-label': 'Delete' }}
           />
         )}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import { isLocked } from './layerLock'
 import { type Effects, canvasFiltersSupported, getEffects } from './objectEffects'
 import type { FabricJSEditor } from './useFabricJSEditor'
 import type { History } from './useHistory'
@@ -21,6 +22,8 @@ export type E2EHook = {
     center: { x: number; y: number }
     fill?: string
     effects: Effects
+    visible: boolean
+    locked: boolean
   }[]
   /** Stack indexes of the selected objects. */
   selection(): number[]
@@ -64,6 +67,8 @@ export function useE2EHook({
           center: { x: o.getCenterPoint().x, y: o.getCenterPoint().y },
           fill: typeof o.fill === 'string' ? o.fill : undefined,
           effects: getEffects(o),
+          visible: o.visible,
+          locked: isLocked(o),
         })),
       selection: () => {
         const canvas = latest.current.editor?.canvas

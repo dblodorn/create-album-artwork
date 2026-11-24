@@ -41,6 +41,8 @@ export function LayersPanel({
   onRasterize,
   rasterizing,
   onMove,
+  onSetVisible,
+  onSetLocked,
   onRemoveBackground,
   isDrawing,
   onScale,
@@ -62,6 +64,8 @@ export function LayersPanel({
   rasterizing: boolean
   // `index` is a panel position, 0 = front.
   onMove: (object: FabricObject, index: number) => void
+  onSetVisible: (object: FabricObject, visible: boolean) => void
+  onSetLocked: (object: FabricObject, locked: boolean) => void
   onRemoveBackground: () => void
   isDrawing: boolean
   onScale: (direction: 'up' | 'down', coarse: boolean) => void
@@ -223,6 +227,8 @@ export function LayersPanel({
                     onSelect={(e) => select(layer, e.shiftKey)}
                     onFocus={() => setFocusedId(layer.id)}
                     onKeyDown={(e) => onRowKeyDown(e, index)}
+                    onSetVisible={(visible) => onSetVisible(layer.object, visible)}
+                    onSetLocked={(locked) => onSetLocked(layer.object, locked)}
                     actions={
                       layer.id === activeId && (
                         <LayerActions
@@ -235,6 +241,7 @@ export function LayersPanel({
                           onRemoveBackground={onRemoveBackground}
                           onRasterize={onRasterize}
                           rasterizing={rasterizing}
+                          locked={layer.locked}
                         />
                       )
                     }

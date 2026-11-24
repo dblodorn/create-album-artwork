@@ -84,7 +84,13 @@ The panel element never changes parent, so docking doesn't remount the Layers li
 
 **Drag:** the title bar has one pointer-capture drag. From docked, nothing happens until the pointer moves more than 4 px (`shouldUndock`), so a click is a no-op. After that the panel floats at its current screen spot and follows the pointer. While floating, `inDropZone` (within 48 px of the panel's own edge) shows `.DockDropZone`. Release decides from the release point, so a quick flick docks. Docking and undocking persist straight away, and moves persist on release.
 
-**Storage:** state is `{ docked, x, y }` in `localStorage["canvas-editor-panel:<id>"]`, read by `readPanelState`. Missing, invalid and pre-docking `{ x, y }` entries are docked. Blocked storage means docked panels that still work for the visit.
+**Storage:** state is `{ docked, x, y }` in `localStorage["canvas-editor-panel:<id>"]`, read by `readPanelState(raw, fallback)`. Pre-docking `{ x, y }` entries are docked.
+
+When nothing readable is stored (missing, invalid, or storage blocked), `usePanelDock(id, side)` uses `defaultPanelState(side, innerWidth)`:
+- 768 px wide or more (`NARROW_VIEWPORT`): docked.
+- Narrower, as on a phone: floating, so the artboard gets the full width. Tools floats at `(EDGE, TOP_LIMIT + EDGE)`. Layers floats at `Number.MAX_SAFE_INTEGER` for both x and y, which `DockablePanel`'s `clampPosition` pins to the bottom-right corner once measured.
+
+The default is never written: only `undock`, `dock` and a saved `move` write. So a phone's default doesn't follow the browser to a wide window, and a remembered arrangement always wins. Resizing after load only clamps.
 
 **Viewport:** `useViewport` refits on resize while fitted. Otherwise `panAfterResize` runs:
 - **The window kept its size** (a dock change): it keeps the artboard still on screen by offsetting pan by how far the workspace's left edge moved.
@@ -92,6 +98,24 @@ The panel element never changes parent, so docking doesn't remount the Layers li
 
 ## 1c. Layers panel
 
+- **Width and rows:** the panel is 300 px wide. Each row is the show/hide and lock toggles, the thumbnail, the label, and on the selected row its inline actions.
+- **Show/hide** uses Fabric's own `visible`, which is serialised by default, so nothing extra is saved. Fabric already skips an invisible object when drawing (canvas and PNG export), hit-testing (`_checkTarget`) and drag-select (`collectObjects`). The panel adds the rest:
+  - `useCanvasLayers.select()` and `toggle()` ignore hidden objects, and the ↑/↓ stepping skips them;
+  - `setVisible(o, false)` takes the object out of the selection, rebuilding the rest in canvas order;
+  - thumbnails render a hidden object with `visible` true for that one call, so its row still shows what it is.
+- **Lock** is a custom property, `layerLocked`, in `customProperties` (`lib/layerLock.ts`). `installLayerLock()` (in `FabricJSCanvas`, beside the effects) wraps `BaseFabricObject.prototype._set`, so setting `layerLocked` also sets `selectable`/`evented`/`hasControls` to `!locked` and `lockMovementX/Y`, `lockScalingX/Y` and `lockRotation` to `locked`. Loading (`fromObject`), paste (`clone`) and undo (`restoreSnapshot`) all set properties through `_set`, so the flags follow the property with no per-path code.
+  - **Selecting it:** a locked layer can't be hit or drag-selected, but `setActiveObject` from its row still selects it. It then shows a border and no handles.
+  - **Multi-selections:** `toggle()` keeps locked layers out. Shift-clicking a locked row beside others does nothing, and Shift-clicking past a selected locked layer starts a new selection. `setLocked(o, true)` takes it out of a multi-selection.
+  - **Guards, at the lowest level:**
+    - `editor.deleteSelected` ignores a locked selection;
+    - nudge, `scaleActiveItemUpDown` and `rotateActiveItem` return early;
+    - `commandState({ locked })` disables Cut;
+    - the row's Transform, Rasterize and Delete are disabled, and Remove background says to unlock first.
+
+    Copy, paste, Arrange and Effects still work.
+- **Toggles:** `LayerRow` renders them first on every row: ghost icon `Button`s with `aria-pressed`, labelled "Hide layer" / "Show layer" and "Lock layer" / "Unlock layer". They share `rowControlGuard` with the actions, so they never select or drag the row.
+  - Each calls `setVisible` / `setLocked` in `useCanvasLayers`, which commits "Hide", "Show", "Lock" or "Unlock".
+  - Hidden rows fade their thumbnail and label to 45% (`data-hidden`), and locked rows to 70% (`data-locked`).
 - **Inline actions** (`LayerActions`): the selected row (single selection only) shows a Transform popout (scale: the longer side ±1 unit, or ×1.1/×0.9 with Shift; rotate: ±1° about the centre, or ±15° with Shift, reset to 0°, with the current angle — `rotateActiveItem` → `commit('Rotate')`), an Effects popout (blur, plus brightness/contrast/saturation/tint, noise and dither on non-text layers, §1f), Remove background on images, Rasterize on everything else, and Delete. They replace the old Object panel; there are no arrange buttons. The slot stops pointer and key events from reaching the row (so no drag, re-select or row key handling), except Escape, so the popout can close. The popout renders in a portal, so its content carries `data-editor-shortcuts="off"` itself. When a popout closes, Reshaped returns focus to what had it when the popout opened: the trigger, or in Safari/WebKit (where clicking a button doesn't focus it) the layer row, both inside the shortcuts-off panel. `onAfterClose` blurs either (the trigger is marked `data-layer-popout-trigger`; the row is the option that contains it), and checks again a frame later because Reshaped can return focus after `onAfterClose`, so ⌘Z and the other canvas shortcuts work straight away. A Reset that disables itself moves focus to the popout's first *enabled* slider (Blur is disabled without canvas filters); focus left on nothing falls to the page, where Escape would deselect the layer instead of just closing the popout. All actions are disabled while drawing. The list scrolls in `.LayerScroll`, which is also dnd-kit's drag boundary.
 - **Multi-select.** The panel's selection *is* the canvas selection: `useCanvasLayers` exposes `selected` (`canvas.getActiveObjects()`, read on every rebuild), `single` (exactly one, which gets the inline actions) and `lastSelected` (the row to keep in view: from the `selected` array of `selection:created`/`selection:updated`, or the row just toggled).
   - Shift-click, or Shift+Enter/Space on a focused row, calls `toggle(object)`. It rebuilds the selection from the current set plus or minus that object, in canvas order: none → `discardActiveObject`, one → `setActiveObject`, several → a new `ActiveSelection`.

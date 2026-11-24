@@ -310,7 +310,7 @@
 
 /* LAYERS */
 .Layers {
-  width: 240px;
+  width: 300px;
   display: flex;
   flex-direction: column;
   gap: var(--rs-unit-x1);
@@ -370,6 +370,15 @@
     box-shadow: inset 3px 0 0 var(--rs-color-border-primary);
   }
 
+  /* Hidden and locked rows: the thumbnail and label fade, the toggles don't. */
+  &[data-locked] :is(.LayerThumb, .LayerLabel) {
+    opacity: 0.7;
+  }
+
+  &[data-hidden] :is(.LayerThumb, .LayerLabel) {
+    opacity: 0.45;
+  }
+
   &[data-dragging] {
     z-index: 1;
     cursor: grabbing;
@@ -407,6 +416,13 @@
 .LayerAction {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* Show/hide and lock, at the start of every row. */
+.LayerToggles {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-inline-end: calc(var(--rs-unit-x1) * -1);
 }
 
 .LayerLabel {

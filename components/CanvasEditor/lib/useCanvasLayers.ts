@@ -2,6 +2,7 @@ import { ActiveSelection, type FabricObject } from 'fabric'
 import { useCallback, useEffect, useState } from 'react'
 
 import { layerId } from './layerIds'
+import { isLocked } from './layerLock'
 import { type LayerKind, layerKind, layerLabel } from './layerLabel'
 import type { FabricJSEditor } from './useFabricJSEditor'
 
@@ -11,6 +12,10 @@ export interface Layer {
   kind: LayerKind
   label: string
   thumbnail: string | null
+  // Hidden layers keep their row (dimmed) but can't be selected; locked ones
+  // can be selected only from their row, on their own.
+  visible: boolean
+  locked: boolean
 }
 
 // CSS px; rendered at devicePixelRatio so thumbnails stay sharp.
@@ -23,6 +28,9 @@ const thumbnails = new WeakMap<FabricObject, string | null>()
 function renderThumbnail(object: FabricObject): string | null {
   const longest = Math.max(object.getScaledWidth(), object.getScaledHeight())
   if (!longest) return null
+  // A hidden object renders nothing; its row still shows what it is.
+  const visible = object.visible
+  object.visible = true
   try {
     return object.toDataURL({
       format: 'png',
@@ -31,6 +39,8 @@ function renderThumbnail(object: FabricObject): string | null {
     })
   } catch {
     return null
+  } finally {
+    object.visible = visible
   }
 }
 
@@ -66,6 +76,8 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
             kind: layerKind(object),
             label: layerLabel(object),
             thumbnail: thumbnailFor(object),
+            visible: object.visible,
+            locked: isLocked(object),
           }))
       )
       const active = canvas.getActiveObjects()
@@ -123,7 +135,7 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
 
   const select = useCallback(
     (object: FabricObject) => {
-      if (!editor) return
+      if (!editor || !object.visible) return
       editor.canvas.setActiveObject(object)
       editor.canvas.requestRenderAll()
     },
@@ -132,19 +144,43 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
 
   // Shift-click: add the object to the selection, or take it out, keeping
   // canvas order so it matches a Shift-click selection made on the canvas.
+  // Locked layers never join a multi-selection: Shift-clicking one beside
+  // others does nothing, and Shift-clicking past a selected one starts afresh.
   const toggle = useCallback(
     (object: FabricObject) => {
-      if (!editor) return
+      if (!editor || !object.visible) return
       const { canvas } = editor
-      const current = new Set(canvas.getActiveObjects())
+      const active = canvas.getActiveObjects()
+      const alone = active.length === 1 && active[0] === object
+      if (isLocked(object) && active.length && !alone) return
+      const current = new Set(active.length === 1 && isLocked(active[0]) && !alone ? [] : active)
       if (current.has(object)) current.delete(object)
       else current.add(object)
       const next = canvas.getObjects().filter((o) => current.has(o))
-      canvas.discardActiveObject()
-      if (next.length === 1) canvas.setActiveObject(next[0])
-      else if (next.length > 1) canvas.setActiveObject(new ActiveSelection(next, { canvas }))
+      reselect(editor, next)
       if (next.includes(object)) setLastSelected(object)
-      canvas.requestRenderAll()
+    },
+    [editor]
+  )
+
+  // The row toggles: each is one undo step. Hiding takes the layer out of the
+  // selection; locking takes it out of a multi-selection (alone, it stays
+  // selected, now without handles).
+  const setVisible = useCallback(
+    (object: FabricObject, visible: boolean) => {
+      if (!editor) return
+      object.set({ visible })
+      if (!visible) leaveSelection(editor, object)
+      editor.commit(visible ? 'Show' : 'Hide')
+    },
+    [editor]
+  )
+  const setLocked = useCallback(
+    (object: FabricObject, locked: boolean) => {
+      if (!editor) return
+      object.set({ layerLocked: locked } as never)
+      if (locked && editor.canvas.getActiveObjects().length > 1) leaveSelection(editor, object)
+      editor.commit(locked ? 'Lock' : 'Unlock')
     },
     [editor]
   )
@@ -165,5 +201,20 @@ export function useCanvasLayers(editor: FabricJSEditor | undefined) {
 
   // Exactly one object selected (the inline actions' target), else null.
   const single = selected.length === 1 ? selected[0] : null
-  return { layers, selected, single, lastSelected, select, toggle, moveTo }
+  return { layers, selected, single, lastSelected, select, toggle, moveTo, setVisible, setLocked }
+}
+
+/** Replaces the selection with `objects` (in canvas order): nothing, one, or a multi-selection. */
+function reselect(editor: FabricJSEditor, objects: FabricObject[]) {
+  const { canvas } = editor
+  canvas.discardActiveObject()
+  if (objects.length === 1) canvas.setActiveObject(objects[0])
+  else if (objects.length > 1) canvas.setActiveObject(new ActiveSelection(objects, { canvas }))
+  canvas.requestRenderAll()
+}
+
+/** Takes `object` out of the selection, if it's in it, keeping the rest selected. */
+function leaveSelection(editor: FabricJSEditor, object: FabricObject) {
+  const active = editor.canvas.getActiveObjects()
+  if (active.includes(object)) reselect(editor, active.filter((o) => o !== object))
 }

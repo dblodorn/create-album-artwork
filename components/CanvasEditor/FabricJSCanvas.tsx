@@ -3,6 +3,7 @@ import { Canvas, PencilBrush } from 'fabric'
 
 import { ARTBOARD, DEFAULT_BRUSH_WIDTH } from './lib/constants'
 import { installCornerRotation } from './lib/cornerRotation'
+import { installLayerLock } from './lib/layerLock'
 import { installObjectEffects } from './lib/objectEffects'
 import { STROKE } from './lib/defaultShapes'
 import {
@@ -12,9 +13,10 @@ import {
 } from './lib/useFabricJSEditor'
 
 // Before any object is created or restored, so every object gets the corner
-// rotation zones and serialises / renders layer effects.
+// rotation zones, serialises / renders layer effects and follows its lock.
 installCornerRotation()
 installObjectEffects()
+installLayerLock()
 
 export interface Props {
   className?: string

@@ -3,6 +3,7 @@ import { Canvas, Circle, FabricImage, Line, Rect, Shadow, Textbox } from 'fabric
 
 import { ensureFontLoaded } from '@/lib/googleFonts'
 import { CIRCLE, FILL, LINE, RECTANGLE, STROKE, TEXT } from './defaultShapes'
+import { isLocked } from './layerLock'
 import { isText } from './objectTypes'
 
 export interface FabricJSEditor {
@@ -95,7 +96,7 @@ const buildEditor = (
     },
     deleteSelected: () => {
       const objects = canvas.getActiveObjects()
-      if (!objects.length) return
+      if (!objects.length || objects.some(isLocked)) return
       canvas.discardActiveObject()
       canvas.remove(...objects)
       commit('Delete')

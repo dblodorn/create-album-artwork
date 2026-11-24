@@ -16,10 +16,12 @@ type Gate = { ready: boolean; label: string }
 // open the dialog. The server checks access again on every request.
 export function useRemoveBackgroundGate(
   activeItem: FabricObject | null,
-  isDrawing: boolean
+  isDrawing: boolean,
+  locked = false
 ): Gate {
   const { viewer, status, features } = useViewer()
   if (!isImage(activeItem) || isDrawing) return { ready: false, label: 'Select an image to remove its background' }
+  if (locked) return { ready: false, label: 'Unlock the layer to remove its background' }
   if (status === 'loading') return { ready: false, label: 'Remove background' }
   if (!viewer) return { ready: false, label: 'Sign in to remove backgrounds' }
   if (!features.backgroundRemoval) {
@@ -35,17 +37,19 @@ const stop = (e: SyntheticEvent) => e.stopPropagation()
 export function RemoveBackgroundButton({
   activeItem,
   isDrawing = false,
+  locked = false,
   onOpen,
   variant = 'circle',
   tooltipPosition = 'bottom',
 }: {
   activeItem: FabricObject | null
   isDrawing?: boolean
+  locked?: boolean
   onOpen: () => void
   variant?: 'circle' | 'ghost'
   tooltipPosition?: 'bottom' | 'start'
 }) {
-  const gate = useRemoveBackgroundGate(activeItem, isDrawing)
+  const gate = useRemoveBackgroundGate(activeItem, isDrawing, locked)
 
   return (
     <Hint text={gate.label} position={tooltipPosition}>

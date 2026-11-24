@@ -48,8 +48,8 @@ export function CanvasEditor() {
   })
   const workspaceRef = useRef<HTMLDivElement>(null)
   const viewport = useViewport(workspaceRef)
-  const toolsDock = usePanelDock('tools')
-  const layersDock = usePanelDock('layers')
+  const toolsDock = usePanelDock('tools', 'left')
+  const layersDock = usePanelDock('layers', 'right')
 
   const history = useHistory(editor)
 
@@ -184,7 +184,8 @@ export function CanvasEditor() {
 
   const selectAdjacentLayer = useCallback(
     (direction: -1 | 1) => {
-      const rows = layers.layers
+      // Hidden layers can't be selected, so stepping skips them.
+      const rows = layers.layers.filter((row) => row.visible)
       if (!rows.length) return
       const current = rows.findIndex((row) => row.object === layers.single)
       const next =
@@ -339,6 +340,8 @@ export function CanvasEditor() {
           onRasterize={rasterizeSelected}
           rasterizing={rasterizing}
           onMove={layers.moveTo}
+          onSetVisible={layers.setVisible}
+          onSetLocked={layers.setLocked}
           onRemoveBackground={openRemoveBackground}
           isDrawing={isDrawing}
           onScale={scaleActiveItemUpDown}
