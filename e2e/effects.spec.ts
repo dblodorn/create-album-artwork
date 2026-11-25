@@ -6,10 +6,10 @@ import { expect, hook, test } from './fixtures'
 import { blurFocus, objectCenter, objects, waitForObjects } from './helpers/canvas'
 import { addText } from './helpers/editor'
 import { shortcut } from './helpers/keys'
-import { RECT_SCENE, TEXT_SCENE, jsonFile } from './helpers/scenes'
-import { pages } from './pages'
+import { IMAGE_SCENE, RECT_SCENE, TEXT_SCENE, jsonFile } from './helpers/scenes'
+import { INK_STARVE_SETTINGS, pages } from './pages'
 
-// Spec: object-effects (colour adjustments, overprint, noise and dither, reset per control, persistence, unsupported browsers).
+// Spec: object-effects (colour adjustments, overprint, ink starve, noise and dither, reset per control, persistence, unsupported browsers).
 
 const effectsOf = async (page: Page, index = 0) => (await objects(page))[index].effects
 
@@ -49,6 +49,13 @@ const rectWith = (effects: object) => ({
 const textWith = (effects: object) => ({
   ...TEXT_SCENE,
   objects: [{ ...TEXT_SCENE.objects[0], ...effects }],
+})
+
+const INK_STARVE_CONTROLS = ['Ink starve', ...INK_STARVE_SETTINGS] as const
+
+const imageWith = (effects: object) => ({
+  ...IMAGE_SCENE,
+  objects: [{ ...IMAGE_SCENE.objects[0], ...effects }],
 })
 
 test.describe('colour adjustments', () => {
@@ -402,6 +409,131 @@ test.describe('overprint', () => {
   })
 })
 
+test.describe('ink starve', () => {
+  // No filter skip: Ink starve doesn't need canvas filters, so this runs in WebKit too.
+  test.beforeEach(async ({ app }) => {
+    await app.open()
+  })
+
+  test('a drag is one named undo step and enables the other controls', async ({ page }) => {
+    await addText(page)
+    const { effects, layers } = pages(page)
+    await layers.select('first')
+    await effects.open()
+    await expect(effects.slider('Ink starve')).toBeEnabled()
+    for (const name of INK_STARVE_SETTINGS) {
+      await expect(effects.slider(name)).toBeDisabled()
+      await expect(effects.reset(name)).toBeDisabled()
+    }
+
+    await effects.drag('Ink starve', 0, 0.4)
+    const amount = (await effectsOf(page)).inkStarveAmount
+    expect(amount).toBeGreaterThan(30)
+    await expect(effects.group('Ink starve')).toContainText(`Ink starve · ${amount}`)
+    for (const name of INK_STARVE_SETTINGS) await expect(effects.slider(name)).toBeEnabled()
+    await expect(effects.group('Roller angle')).toContainText('Roller angle · 14°')
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Ink starve')
+
+    await effects.close()
+    await blurFocus(page)
+    await shortcut(page, 'Mod+Z')
+    await expect.poll(async () => (await effectsOf(page)).inkStarveAmount).toBe(0)
+  })
+
+  test('Seed is its own undo step', async ({ page }) => {
+    await loadAndSelect(page, textWith({ inkStarveAmount: 40 }))
+    const { effects } = pages(page)
+    await effects.open()
+    await effects.drag('Seed', 0, 0.3)
+    await expect.poll(async () => (await effectsOf(page)).inkSeed).toBeGreaterThan(20)
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Seed')
+  })
+
+  test("Ink starve's Reset keeps its settings; Spray's Reset returns it to 22", async ({ page }) => {
+    await loadAndSelect(page, imageWith({ inkStarveAmount: 40, inkRoller: 80, inkSeed: 9, inkSpray: 70 }))
+    const { effects } = pages(page)
+    await effects.open()
+    await effects.reset('Spray').click()
+    await expect.poll(async () => (await effectsOf(page)).inkSpray).toBe(22)
+    await expect(effects.reset('Spray')).toBeDisabled()
+    expect((await effectsOf(page)).inkStarveAmount).toBe(40)
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Spray')
+
+    await effects.reset('Ink starve').click()
+    await expect.poll(async () => (await effectsOf(page)).inkStarveAmount).toBe(0)
+    expect(await effectsOf(page)).toMatchObject({ inkRoller: 80, inkSeed: 9 })
+    for (const name of INK_STARVE_SETTINGS) {
+      await expect(effects.slider(name)).toBeDisabled()
+      await expect(effects.reset(name)).toBeDisabled()
+    }
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Ink starve')
+  })
+
+  test('survive a reload and paste', async ({ page }) => {
+    const STARVED = { inkStarveAmount: 45, inkRollerAngle: 90, inkSeed: 7 }
+    await loadAndSelect(page, textWith(STARVED), 'starved.json')
+    expect(await effectsOf(page)).toMatchObject(STARVED)
+
+    await page.waitForTimeout(800)
+    await page.reload()
+    await expect.poll(() => hook(page, 'ready')).toBe(true)
+    await waitForObjects(page, 1)
+    expect(await effectsOf(page)).toMatchObject(STARVED)
+
+    await pages(page).layers.select('first')
+    await expect.poll(() => hook(page, 'selection')).not.toEqual([])
+    const { effects } = pages(page)
+    await effects.open()
+    await expect(effects.group('Roller angle')).toContainText('Roller angle · 90°')
+    await expect(effects.group('Seed')).toContainText('Seed · 7')
+    await effects.close()
+    await blurFocus(page)
+    await shortcut(page, 'Mod+C')
+    await shortcut(page, 'Mod+Shift+V')
+    await waitForObjects(page, 2)
+    expect(await effectsOf(page, 1)).toMatchObject(STARVED)
+  })
+
+  test('the PNG export shows starved text: less ink than the same text plain', async ({ page }) => {
+    // The same text twice in one export (a second download in one test is blocked): starved blue, plain red.
+    const starved = { ...TEXT_SCENE.objects[0], top: 300, inkStarveAmount: 60, inkSpray: 0 }
+    const plain = { ...TEXT_SCENE.objects[0], top: 700, fill: '#e63946' }
+    await loadAndSelect(page, { ...TEXT_SCENE, objects: [starved, plain] })
+    const [png] = await Promise.all([page.waitForEvent('download'), pages(page).file.choose('Download PNG')])
+    const path = (await png.path())!
+    const blue = await inkPixels(page, path, [0x1d, 0x35, 0x57])
+    const red = await inkPixels(page, path, [0xe6, 0x39, 0x46])
+    expect(blue).toBeGreaterThan(0)
+    expect(blue).toBeLessThan(red * 0.9)
+  })
+
+  test('the PNG export shows a starved image: the background shows through it', async ({ page }) => {
+    await loadAndSelect(page, imageWith({ inkStarveAmount: 60, inkSpray: 0 }))
+    const [png] = await Promise.all([page.waitForEvent('download'), pages(page).file.choose('Download PNG')])
+    const magenta = await inkPixels(page, (await png.path())!, [0xff, 0x00, 0xff])
+    // 3000² pixels, of which the 400 × 300 unit photo covers 1200 × 900: at least a tenth of it starved away.
+    expect(magenta).toBeGreaterThan(3000 * 3000 - 1200 * 900 * 0.9)
+    expect(magenta).toBeLessThan(3000 * 3000)
+  })
+
+  test('Rasterize keeps the spray: the image covers it past the edges', async ({ page }) => {
+    const sprayed = { ...TEXT_SCENE.objects[0], top: 250, inkStarveAmount: 40, inkSpray: 60 }
+    const dry = { ...TEXT_SCENE.objects[0], top: 650, inkStarveAmount: 40, inkSpray: 0 }
+    await page.locator('input[type="file"][accept*="json"]').setInputFiles(jsonFile('spray.json', { ...TEXT_SCENE, objects: [dry, sprayed] }))
+    await expect.poll(() => hook(page, 'ready')).toBe(true)
+    await waitForObjects(page, 2)
+    const { layers } = pages(page)
+    for (const row of [0, 1]) {
+      await layers.select(row)
+      await layers.rasterizeButton.click()
+      await expect.poll(async () => (await objects(page)).filter((o) => o.type === 'image').length).toBe(row + 1)
+    }
+    const [dryImage, sprayedImage] = await objects(page)
+    // The spray reaches 7.5 grains past the edges; a grain is 1/1000 of the 600-unit box.
+    expect(Math.abs(sprayedImage.size.width - dryImage.size.width - 2 * 7.5 * 0.6)).toBeLessThan(1.5)
+  })
+})
+
 test.describe('effect sections', () => {
   test.beforeEach(async ({ app }) => {
     await app.open()
@@ -422,16 +554,34 @@ test.describe('effect sections', () => {
     expect(border).toBe('1px')
   })
 
-  test('a text layer gets the Blur and Overprint sections', async ({ page }) => {
+  test('a text layer gets the Blur, Overprint and Ink starve sections', async ({ page }) => {
     await addText(page)
     const { effects, layers } = pages(page)
     await layers.select('first')
     await effects.open()
-    await expect(effects.sections).toHaveCount(2)
+    await expect(effects.sections).toHaveCount(3)
     const names = await effects.sections.evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
-    expect(names).toEqual(['Blur controls', 'Overprint controls'])
+    expect(names).toEqual(['Blur controls', 'Overprint controls', 'Ink starve controls'])
     await expect(effects.section('Overprint').getByRole('group', { name: 'Deterioration', exact: true })).toBeVisible()
     await expect(effects.section('Overprint').getByRole('group', { name: 'Overprint', exact: true })).toBeVisible()
+    for (const name of INK_STARVE_CONTROLS) {
+      await expect(effects.section('Ink starve').getByRole('group', { name, exact: true })).toHaveCount(1)
+    }
+  })
+
+  test('an image gets six sections, ending with Ink starve; a shape gets no Ink starve', async ({ page }) => {
+    await loadAndSelect(page, IMAGE_SCENE)
+    const { effects } = pages(page)
+    await effects.open()
+    await expect(effects.sections).toHaveCount(6)
+    const names = await effects.sections.evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+    expect(names).toEqual(['Blur controls', 'Colour controls', 'Tint controls', 'Noise controls', 'Dither controls', 'Ink starve controls'])
+    await effects.close()
+
+    await loadAndSelect(page, RECT_SCENE, 'rect.json')
+    await effects.open()
+    await expect(effects.section('Ink starve')).toHaveCount(0)
+    await expect(effects.group('Ink starve')).toHaveCount(0)
   })
 
   test('in a short window the popout scrolls, so Remove white is still reachable', async ({ page }) => {
@@ -461,6 +611,15 @@ test.describe('effects in the scene', () => {
     ditherKnockout: true,
     deteriorationAmount: 0,
     overprintAmount: 67,
+    // Ink starve is ignored on shapes when drawn, but kept in the scene like the rest.
+    inkStarveAmount: 45,
+    inkSoftness: 20,
+    inkRoller: 70,
+    inkRollerAngle: 90,
+    inkBlobSize: 30,
+    inkSpray: 60,
+    inkNicks: 10,
+    inkSeed: 7,
   }
 
   test('survive a reload and Save JSON', async ({ page, app }) => {
@@ -506,6 +665,14 @@ test.describe('effects in the scene', () => {
       ditherKnockout: false,
       deteriorationAmount: 0,
       overprintAmount: 67,
+      inkStarveAmount: 0,
+      inkSoftness: 13,
+      inkRoller: 55,
+      inkRollerAngle: 14,
+      inkBlobSize: 12,
+      inkSpray: 22,
+      inkNicks: 25,
+      inkSeed: 1,
     })
   })
 
@@ -542,5 +709,17 @@ test.describe('effects in the scene', () => {
     await expect(effects.slider('Overprint')).toBeEnabled()
     await effects.drag('Overprint', 0.67, 0.9)
     await expect.poll(async () => (await effectsOf(page)).overprintAmount).toBeGreaterThan(80)
+  })
+
+  test('without canvas filters Ink starve still works', async ({ page, app }) => {
+    await app.open()
+    test.skip(!!(await hook(page, 'filtersSupported')), 'this browser supports canvas filters')
+    await loadAndSelect(page, TEXT_SCENE)
+    const { effects } = pages(page)
+    await effects.open()
+    await effects.drag('Ink starve', 0, 0.4)
+    await expect.poll(async () => (await effectsOf(page)).inkStarveAmount).toBeGreaterThan(30)
+    // That it renders here is covered by the 'ink starve' export tests, which run in WebKit too.
+    for (const name of INK_STARVE_CONTROLS) await expect(effects.slider(name)).toBeEnabled()
   })
 })

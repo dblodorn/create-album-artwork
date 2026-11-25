@@ -1,7 +1,7 @@
 import { ActiveSelection, FabricImage, type FabricObject } from 'fabric'
 
 import type { FabricJSEditor } from './useFabricJSEditor'
-import { getEffects, overprintSpill } from './objectEffects'
+import { getEffects, printSpill } from './objectEffects'
 
 /*
  * Merge and Rasterize: turn layers into one image of how they look, effects,
@@ -20,12 +20,12 @@ export type Bounds = { left: number; top: number; width: number; height: number 
 
 type Point = { x: number; y: number }
 
-/** How far an object's look spreads past its outline, in artboard units: blur spill, Overprint spread and shadow. */
+/** How far an object's look spreads past its outline, in artboard units: blur spill, Overprint spread, Ink starve spray and shadow. */
 export function spill(object: FabricObject): number {
   const blur = 3 * getEffects(object).blurAmount
   const s = object.shadow
   const shadow = s ? (Math.abs(s.offsetX) + Math.abs(s.offsetY) + s.blur) * Math.max(Math.abs(object.scaleX), Math.abs(object.scaleY)) : 0
-  return blur + overprintSpill(object) + shadow
+  return blur + printSpill(object) + shadow
 }
 
 /** The union of each object's corners (scene space) grown by its spill. */

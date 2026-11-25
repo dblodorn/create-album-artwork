@@ -201,9 +201,22 @@ export class LayersPanel {
   }
 }
 
-type EffectName = 'Blur' | 'Deterioration' | 'Overprint' | 'Brightness' | 'Contrast' | 'Saturation' | 'Tint' | 'Noise' | 'Pixel size'
+export const INK_STARVE_SETTINGS = ['Softness', 'Roller', 'Roller angle', 'Blob size', 'Spray', 'Nicks', 'Seed'] as const
 
-type SectionName = 'Blur' | 'Overprint' | 'Colour' | 'Tint' | 'Noise' | 'Dither'
+type EffectName =
+  | 'Blur'
+  | 'Deterioration'
+  | 'Overprint'
+  | 'Brightness'
+  | 'Contrast'
+  | 'Saturation'
+  | 'Tint'
+  | 'Noise'
+  | 'Pixel size'
+  | 'Ink starve'
+  | (typeof INK_STARVE_SETTINGS)[number]
+
+type SectionName = 'Blur' | 'Overprint' | 'Colour' | 'Tint' | 'Noise' | 'Dither' | 'Ink starve'
 
 /**
  * The selected layer's Effects popout. Each control is a group named after it,

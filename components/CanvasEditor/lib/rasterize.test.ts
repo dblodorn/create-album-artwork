@@ -70,6 +70,32 @@ describe('spill', () => {
     rect.set({ deteriorationAmount: 0.05 } as never)
     expect(spill(rect)).toBe(0)
   })
+
+  it("counts Ink starve's spray: 7.5 grains, scaled with the layer, only with Spray on", () => {
+    const text = new Textbox('Dry', { fontSize: 100, width: 1000 })
+    expect(spill(text)).toBe(0)
+    text.set({ inkSpray: 60 } as never)
+    expect(spill(text)).toBe(0)
+    text.set({ inkStarveAmount: 40 } as never)
+    // A grain is 1/1000 of the longer side (1 unit here), so the spray reaches 7.5 units.
+    expect(spill(text)).toBeCloseTo(7.5)
+    text.set({ scaleX: 2, scaleY: 2 })
+    expect(spill(text)).toBeCloseTo(15)
+    text.set({ inkSpray: 0 } as never)
+    expect(spill(text)).toBe(0)
+    // An image 3000 px across has 3-pixel grains.
+    const image = new FabricImage(document.createElement('canvas'), { width: 3000, height: 2000, scaleX: 0.25, scaleY: 0.25 })
+    image.set({ inkStarveAmount: 40 } as never)
+    expect(spill(image)).toBeCloseTo(7.5 * 3 * 0.25)
+    // Adds to Overprint's 3σ on worn text.
+    const worn = new Textbox('Dry', { fontSize: 100, width: 1000 })
+    worn.set({ deteriorationAmount: 0.05, inkStarveAmount: 40 } as never)
+    expect(spill(worn)).toBeCloseTo(15 + 7.5)
+    // Ignored on shapes.
+    const rect = new Rect()
+    rect.set({ inkStarveAmount: 40 } as never)
+    expect(spill(rect)).toBe(0)
+  })
 })
 
 describe('rasterScale', () => {
