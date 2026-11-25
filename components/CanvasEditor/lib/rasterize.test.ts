@@ -58,6 +58,18 @@ describe('spill', () => {
     const shadowed = new Rect({ scaleX: 2, shadow: new Shadow({ offsetX: 3, offsetY: -2, blur: 5 }) })
     expect(spill(shadowed)).toBe(20)
   })
+
+  it('counts Overprint spread on worn text: 3σ, scaled with the text', () => {
+    const plain = new Textbox('Worn', { fontSize: 100 })
+    const worn = new Textbox('Worn', { fontSize: 100, scaleX: 2, scaleY: 2 })
+    worn.set({ deteriorationAmount: 0.05 } as never)
+    // σ = 0.05 × 100 × 2 = 10 artboard units.
+    expect(spill(worn) - spill(plain)).toBeCloseTo(30)
+    // Ignored on anything but text.
+    const rect = new Rect()
+    rect.set({ deteriorationAmount: 0.05 } as never)
+    expect(spill(rect)).toBe(0)
+  })
 })
 
 describe('rasterScale', () => {

@@ -6,10 +6,10 @@ import { expect, hook, test } from './fixtures'
 import { blurFocus, objectCenter, objects, waitForObjects } from './helpers/canvas'
 import { addText } from './helpers/editor'
 import { shortcut } from './helpers/keys'
-import { RECT_SCENE, jsonFile } from './helpers/scenes'
+import { RECT_SCENE, TEXT_SCENE, jsonFile } from './helpers/scenes'
 import { pages } from './pages'
 
-// Spec: object-effects (colour adjustments, noise and dither, reset per control, persistence, unsupported browsers).
+// Spec: object-effects (colour adjustments, overprint, noise and dither, reset per control, persistence, unsupported browsers).
 
 const effectsOf = async (page: Page, index = 0) => (await objects(page))[index].effects
 
@@ -24,9 +24,31 @@ async function loadAndSelect(page: Page, scene: object, name = 'fx.json') {
   await expect.poll(() => hook(page, 'selection')).not.toEqual([])
 }
 
+/** How many pixels of a downloaded PNG are close to `rgb`. */
+async function inkPixels(page: Page, path: string, rgb: [number, number, number]) {
+  const base64 = readFileSync(path).toString('base64')
+  return page.evaluate(async ({ base64, rgb: [r, g, b] }) => {
+    const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob())
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(bitmap, 0, 0)
+    const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height)
+    let n = 0
+    for (let i = 0; i < data.length; i += 4) {
+      if (Math.abs(data[i] - r) + Math.abs(data[i + 1] - g) + Math.abs(data[i + 2] - b) < 40) n++
+    }
+    return n
+  }, { base64, rgb })
+}
+
 const rectWith = (effects: object) => ({
   ...RECT_SCENE,
   objects: [{ ...RECT_SCENE.objects[0], ...effects }],
+})
+
+const textWith = (effects: object) => ({
+  ...TEXT_SCENE,
+  objects: [{ ...TEXT_SCENE.objects[0], ...effects }],
 })
 
 test.describe('colour adjustments', () => {
@@ -133,6 +155,7 @@ test.describe('colour adjustments', () => {
     await layers.select('first')
     await effects.open()
     await expect(effects.group('Blur')).toBeVisible()
+    await expect(effects.group('Deterioration')).toBeVisible()
     for (const name of ['Brightness', 'Contrast', 'Saturation', 'Tint'] as const) {
       await expect(effects.group(name)).toHaveCount(0)
     }
@@ -265,6 +288,120 @@ test.describe('noise and dither', () => {
   })
 })
 
+test.describe('overprint', () => {
+  // No filter skip: Overprint doesn't need canvas filters, so this runs in WebKit too.
+  test.beforeEach(async ({ app }) => {
+    await app.open()
+  })
+
+  test('a Deterioration drag is one named undo step and enables Overprint', async ({ page }) => {
+    await addText(page)
+    const { effects, layers } = pages(page)
+    await layers.select('first')
+    await effects.open()
+    await expect(effects.slider('Deterioration')).toBeEnabled()
+    await expect(effects.slider('Overprint')).toBeDisabled()
+    await expect(effects.reset('Overprint')).toBeDisabled()
+
+    await effects.drag('Deterioration', 0, 0.4)
+    const amount = (await effectsOf(page)).deteriorationAmount
+    expect(amount).toBeGreaterThan(0.03)
+    expect(amount).toBeLessThanOrEqual(0.15)
+    await expect(effects.group('Deterioration')).toContainText(`Deterioration · ${amount}`)
+    await expect(effects.slider('Overprint')).toBeEnabled()
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Deterioration')
+
+    await effects.close()
+    await blurFocus(page)
+    await shortcut(page, 'Mod+Z')
+    await expect.poll(async () => (await effectsOf(page)).deteriorationAmount).toBe(0)
+  })
+
+  test('an Overprint drag is one named undo step', async ({ page }) => {
+    await loadAndSelect(page, textWith({ deteriorationAmount: 0.06 }))
+    const { effects } = pages(page)
+    await effects.open()
+    await expect(effects.group('Overprint')).toContainText('Overprint · 67')
+    await effects.drag('Overprint', 0.67, 0.9)
+    await expect.poll(async () => (await effectsOf(page)).overprintAmount).toBeGreaterThan(80)
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Overprint')
+
+    await effects.close()
+    await blurFocus(page)
+    await shortcut(page, 'Mod+Z')
+    await expect.poll(async () => (await effectsOf(page)).overprintAmount).toBe(67)
+  })
+
+  test("Deterioration's Reset keeps Overprint; Overprint's Reset returns it to 67", async ({ page }) => {
+    await loadAndSelect(page, textWith({ deteriorationAmount: 0.06, overprintAmount: 80 }))
+    const { effects } = pages(page)
+    await effects.open()
+    await effects.reset('Deterioration').click()
+    await expect.poll(async () => (await effectsOf(page)).deteriorationAmount).toBe(0)
+    expect((await effectsOf(page)).overprintAmount).toBe(80)
+    await expect(effects.slider('Overprint')).toBeDisabled()
+    await expect(effects.reset('Overprint')).toBeDisabled()
+    await expect(effects.reset('Deterioration')).toBeDisabled()
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Deterioration')
+
+    await effects.close()
+    await blurFocus(page)
+    await shortcut(page, 'Mod+Z')
+    await expect.poll(async () => (await effectsOf(page)).deteriorationAmount).toBe(0.06)
+
+    // Undo restores the layer as it was, which can leave it unselected.
+    await pages(page).layers.select('first')
+    await expect.poll(() => hook(page, 'selection')).not.toEqual([])
+    await effects.open()
+    await effects.reset('Overprint').click()
+    await expect.poll(async () => (await effectsOf(page)).overprintAmount).toBe(67)
+    await expect(effects.reset('Overprint')).toBeDisabled()
+    await expect.poll(() => hook(page, 'undoLabel')).toBe('Overprint')
+  })
+
+  test('survive a reload and paste', async ({ page }) => {
+    const OVERPRINT = { deteriorationAmount: 0.05, overprintAmount: 75 }
+    await loadAndSelect(page, textWith(OVERPRINT), 'worn.json')
+    expect(await effectsOf(page)).toMatchObject(OVERPRINT)
+
+    await page.waitForTimeout(800)
+    await page.reload()
+    await expect.poll(() => hook(page, 'ready')).toBe(true)
+    await waitForObjects(page, 1)
+    expect(await effectsOf(page)).toMatchObject(OVERPRINT)
+
+    await pages(page).layers.select('first')
+    await expect.poll(() => hook(page, 'selection')).not.toEqual([])
+    await blurFocus(page)
+    await shortcut(page, 'Mod+C')
+    await shortcut(page, 'Mod+Shift+V')
+    await waitForObjects(page, 2)
+    expect(await effectsOf(page, 1)).toMatchObject(OVERPRINT)
+  })
+
+  test('the PNG export shows it: bolder worn letters cover more of the 3000 px image', async ({ page }) => {
+    // The same text twice, one worn (blue) and one plain (red), in one export:
+    // a second PNG download in the same test is blocked as an automatic download.
+    const worn = { ...TEXT_SCENE.objects[0], top: 300, deteriorationAmount: 0.1, overprintAmount: 90 }
+    const plain = { ...TEXT_SCENE.objects[0], top: 700, fill: '#e63946' }
+    await loadAndSelect(page, { ...TEXT_SCENE, objects: [worn, plain] })
+    const [png] = await Promise.all([page.waitForEvent('download'), pages(page).file.choose('Download PNG')])
+    const path = (await png.path())!
+    const blue = await inkPixels(page, path, [0x1d, 0x35, 0x57])
+    const red = await inkPixels(page, path, [0xe6, 0x39, 0x46])
+    expect(red).toBeGreaterThan(0)
+    expect(blue).toBeGreaterThan(red * 1.2)
+  })
+
+  test('an image has no Overprint section', async ({ page }) => {
+    await loadAndSelect(page, RECT_SCENE)
+    const { effects } = pages(page)
+    await effects.open()
+    await expect(effects.section('Overprint')).toHaveCount(0)
+    await expect(effects.group('Deterioration')).toHaveCount(0)
+  })
+})
+
 test.describe('effect sections', () => {
   test.beforeEach(async ({ app }) => {
     await app.open()
@@ -285,13 +422,16 @@ test.describe('effect sections', () => {
     expect(border).toBe('1px')
   })
 
-  test('a text layer gets the Blur section only', async ({ page }) => {
+  test('a text layer gets the Blur and Overprint sections', async ({ page }) => {
     await addText(page)
     const { effects, layers } = pages(page)
     await layers.select('first')
     await effects.open()
-    await expect(effects.sections).toHaveCount(1)
-    await expect(effects.section('Blur')).toBeVisible()
+    await expect(effects.sections).toHaveCount(2)
+    const names = await effects.sections.evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+    expect(names).toEqual(['Blur controls', 'Overprint controls'])
+    await expect(effects.section('Overprint').getByRole('group', { name: 'Deterioration', exact: true })).toBeVisible()
+    await expect(effects.section('Overprint').getByRole('group', { name: 'Overprint', exact: true })).toBeVisible()
   })
 
   test('in a short window the popout scrolls, so Remove white is still reachable', async ({ page }) => {
@@ -319,6 +459,8 @@ test.describe('effects in the scene', () => {
     ditherEnabled: true,
     ditherPixelSize: 4,
     ditherKnockout: true,
+    deteriorationAmount: 0,
+    overprintAmount: 67,
   }
 
   test('survive a reload and Save JSON', async ({ page, app }) => {
@@ -362,6 +504,8 @@ test.describe('effects in the scene', () => {
       ditherEnabled: false,
       ditherPixelSize: 2,
       ditherKnockout: false,
+      deteriorationAmount: 0,
+      overprintAmount: 67,
     })
   })
 
@@ -377,7 +521,7 @@ test.describe('effects in the scene', () => {
     await expect(effects.tintColour).toBeDisabled()
     await expect(effects.invertSwitch).toBeDisabled()
     await expect(effects.invertSwitch).toBeChecked()
-    // Noise and dither don't need filters.
+    // Noise and dither don't need filters, nor does Overprint (on text, below).
     await expect(effects.slider('Noise')).toBeEnabled()
     await expect(effects.ditherSwitch).toBeEnabled()
     await expect(effects.slider('Pixel size')).toBeEnabled()
@@ -385,5 +529,18 @@ test.describe('effects in the scene', () => {
     await expect(effects.removeWhiteSwitch).toBeChecked()
     // The values are kept.
     expect(await effectsOf(page)).toEqual(FX)
+  })
+
+  test('without canvas filters Overprint still works on text', async ({ page, app }) => {
+    await app.open()
+    test.skip(!!(await hook(page, 'filtersSupported')), 'this browser supports canvas filters')
+    await loadAndSelect(page, textWith({ deteriorationAmount: 0.06 }))
+    const { effects } = pages(page)
+    await effects.open()
+    await expect(effects.slider('Blur')).toBeDisabled()
+    await expect(effects.slider('Deterioration')).toBeEnabled()
+    await expect(effects.slider('Overprint')).toBeEnabled()
+    await effects.drag('Overprint', 0.67, 0.9)
+    await expect.poll(async () => (await effectsOf(page)).overprintAmount).toBeGreaterThan(80)
   })
 })
