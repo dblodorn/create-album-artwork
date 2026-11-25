@@ -4,6 +4,12 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-25 — Ink starve
+
+- Text and image layers have a new Ink starve section, last in Effects: the layer prints as if the roller were running out of ink, solid where the ink held and breaking into soft patches, fine spray and small nicks where it ran out. On images the starved parts become transparent.
+- Every part of it can be adjusted: Ink starve (how dry), Softness, Roller and Roller angle (which side runs dry), Blob size, Spray, Nicks, and Seed for a different pattern with the same character. The settings wait until Ink starve is above 0, and each has its own Reset and undo step.
+- It works with Overprint on text (worn, then starved), moves and scales with the layer, follows the text's shadow, is saved with the file, shows in the PNG export and survives Rasterize and Merge, and works in browsers without canvas filters.
+
 ## 2026-11-24 — Colophon
 
 - The 🎨 menu has a new Colophon…, between Changelog… and View on GitHub. It credits the people, tools and prior work behind the editor: UX, what it was built with, the typefaces, the design system, and the sources behind Overprint, Dither, the canvas and background removal.

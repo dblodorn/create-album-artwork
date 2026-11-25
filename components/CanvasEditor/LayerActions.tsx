@@ -10,6 +10,7 @@ import css from './CanvasEditor.module.css'
 import {
   EFFECT_LABEL,
   EFFECT_RANGE,
+  INK_STARVE_SETTINGS,
   type EffectKey,
   type OnEffect,
   canvasFiltersSupported,
@@ -291,7 +292,7 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
   // Likewise the tint colour while the picker is open.
   const [picking, setPicking] = useState<string | null>(null)
   const effects = { ...getEffects(object), ...dragging, ...(picking ? { tintColor: picking } : {}) }
-  // Blur, the colour adjustments and tint need canvas filters; overprint, noise and dither don't.
+  // Blur, the colour adjustments and tint need canvas filters; overprint, ink starve, noise and dither don't.
   const supported = canvasFiltersSupported()
   const change = (key: EffectKey) => (value: number, final: boolean, merge?: boolean) => {
     setDragging(({ [key]: _, ...rest }) => (final ? rest : { ...rest, [key]: value }))
@@ -373,6 +374,15 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
             />
           </EffectSection>
         </>
+      )}
+      {(isText(object) || isImage(object)) && (
+        <EffectSection name="Ink starve">
+          {slider('inkStarveAmount', EFFECT_LABEL.inkStarveAmount, '', false)}
+          {/* The rest shape the starve, so they wait for it (and keep their values). */}
+          {INK_STARVE_SETTINGS.map((key) =>
+            slider(key, EFFECT_LABEL[key], key === 'inkRollerAngle' ? '°' : '', effects.inkStarveAmount === 0)
+          )}
+        </EffectSection>
       )}
       {!supported && (
         <Text variant="caption-1" color="neutral-faded">

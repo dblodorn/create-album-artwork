@@ -1,6 +1,6 @@
 import { BaseFabricObject, type FabricObject, type TMat2D, util } from 'fabric'
 
-import { isText } from './objectTypes'
+import { isImage, isText } from './objectTypes'
 
 /*
  * Effects for any layer: blur, brightness, contrast, saturation, tint, noise
@@ -15,8 +15,11 @@ import { isText } from './objectTypes'
  * adjustments → noise → dither → tint → blur. Browsers without canvas filters
  * skip blur, the adjustments and tint (the values are kept); noise and dither
  * only need pixel access and compositing, so they work there too. Text layers
- * get Overprint instead (see `renderOverprint`): blurred and cut back to a hard
- * edge in JavaScript, so it doesn't need canvas filters either.
+ * can get Overprint (blurred and cut back to a hard edge), and text and image
+ * layers Ink starve (a roller running out of ink); both work on a cached bitmap
+ * in JavaScript (see `renderPrinted`), so they don't need canvas filters either.
+ * On text the order is Overprint → Ink starve → blur; on images, adjustments →
+ * noise → dither → tint → Ink starve → blur.
  */
 
 export const MAX_BLUR = 50
@@ -31,6 +34,14 @@ export type EffectKey =
   | 'ditherPixelSize'
   | 'deteriorationAmount'
   | 'overprintAmount'
+  | 'inkStarveAmount'
+  | 'inkSoftness'
+  | 'inkRoller'
+  | 'inkRollerAngle'
+  | 'inkBlobSize'
+  | 'inkSpray'
+  | 'inkNicks'
+  | 'inkSeed'
 
 export type Effects = Record<EffectKey, number> & {
   tintColor: string
@@ -64,6 +75,17 @@ export const EFFECT_RANGE: Record<EffectKey, { min: number; max: number; neutral
   // Overprint (text): the blur before the cut, as a fraction of the font size, and where the cut falls.
   deteriorationAmount: { min: 0, max: 0.15, neutral: 0, step: 0.001 },
   overprintAmount: { min: 2, max: 98, neutral: 67 },
+  // Ink starve (text and images): how dry the roller is (0 = off); the rest
+  // start at the sketch's numbers and only matter while it's on (see inkStarveParams).
+  inkStarveAmount: { min: 0, max: 100, neutral: 0 },
+  inkSoftness: { min: 0, max: 50, neutral: 13 },
+  inkRoller: { min: 0, max: 100, neutral: 55 },
+  inkRollerAngle: { min: 0, max: 359, neutral: 14 },
+  // Percent of the layer's longer side.
+  inkBlobSize: { min: 2, max: 50, neutral: 12 },
+  inkSpray: { min: 0, max: 100, neutral: 22 },
+  inkNicks: { min: 0, max: 100, neutral: 25 },
+  inkSeed: { min: 1, max: 100, neutral: 1 },
 }
 
 export const EFFECT_KEYS = Object.keys(EFFECT_RANGE) as EffectKey[]
@@ -83,6 +105,14 @@ export const EFFECT_LABEL: Record<EffectKey | 'tintColor' | 'tintInvert' | 'dith
   ditherKnockout: 'Remove white',
   deteriorationAmount: 'Deterioration',
   overprintAmount: 'Overprint',
+  inkStarveAmount: 'Ink starve',
+  inkSoftness: 'Softness',
+  inkRoller: 'Roller',
+  inkRollerAngle: 'Roller angle',
+  inkBlobSize: 'Blob size',
+  inkSpray: 'Spray',
+  inkNicks: 'Nicks',
+  inkSeed: 'Seed',
 }
 
 /** Red, so a first raise of Strength shows a visible tint. */
@@ -102,6 +132,14 @@ export const NEUTRAL_EFFECTS: Effects = {
   ditherKnockout: false,
   deteriorationAmount: 0,
   overprintAmount: EFFECT_RANGE.overprintAmount.neutral,
+  inkStarveAmount: 0,
+  inkSoftness: EFFECT_RANGE.inkSoftness.neutral,
+  inkRoller: EFFECT_RANGE.inkRoller.neutral,
+  inkRollerAngle: EFFECT_RANGE.inkRollerAngle.neutral,
+  inkBlobSize: EFFECT_RANGE.inkBlobSize.neutral,
+  inkSpray: EFFECT_RANGE.inkSpray.neutral,
+  inkNicks: EFFECT_RANGE.inkNicks.neutral,
+  inkSeed: EFFECT_RANGE.inkSeed.neutral,
 }
 
 /** The value rounded to the effect's step, within its range; its neutral value for anything that isn't a finite number. */
@@ -131,10 +169,21 @@ export function getEffects(object: unknown): Effects {
 
 export const getBlur = (object: unknown): number => getEffects(object).blurAmount
 
-// Settings that change nothing on their own: they only matter with Dither or Deterioration on.
-const DEPENDENT: EffectKey[] = ['ditherPixelSize', 'overprintAmount']
+/** Ink starve's settings besides the amount: they only matter while it's above 0. */
+export const INK_STARVE_SETTINGS = [
+  'inkSoftness',
+  'inkRoller',
+  'inkRollerAngle',
+  'inkBlobSize',
+  'inkSpray',
+  'inkNicks',
+  'inkSeed',
+] as const satisfies readonly EffectKey[]
 
-/** Whether anything changes how the layer looks. Pixel size, Remove white and Overprint alone don't. */
+// Settings that change nothing on their own: they only matter with Dither, Deterioration or Ink starve on.
+const DEPENDENT: EffectKey[] = ['ditherPixelSize', 'overprintAmount', ...INK_STARVE_SETTINGS]
+
+/** Whether anything changes how the layer looks. Pixel size, Remove white, Overprint and Ink starve's settings alone don't. */
 export const hasEffects = (e: Effects) =>
   e.ditherEnabled || EFFECT_KEYS.some((key) => !DEPENDENT.includes(key) && e[key] !== EFFECT_RANGE[key].neutral)
 
@@ -413,6 +462,262 @@ export function applyOverprint(data: Uint8ClampedArray, w: number, h: number, si
   }
 }
 
+// Ink starve: a roller running out of ink, after the sigil-x-native-interviews
+// "ink starve" sketch. Per grain cell the ink holds with probability
+//   p = smoothstep(starve − soft, starve + soft, fbm(pos / blob) − along × roller)
+// (coverage noise, less ink towards the roller angle); inked pixels get a
+// slight mottle, rare nicks are cut out, and spray from a blurred copy lands
+// just past the edges where the ink is fading. Everything is in the layer's own
+// unscaled units, so the pattern moves, turns and scales with it.
+
+/*
+ * 2D simplex noise, ported from the GLSL by Ashima Arts and Stefan Gustavson
+ * (https://github.com/ashima/webgl-noise), under the MIT licence:
+ *
+ * Copyright (C) 2011 by Ashima Arts (Simplex noise)
+ * Copyright (C) 2011-2016 by Stefan Gustavson (Classic noise and others)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+const mod289 = (x: number) => x - Math.floor(x / 289) * 289
+const permute = (x: number) => mod289((x * 34 + 1) * x)
+const fract = (x: number) => x - Math.floor(x)
+const SIMPLEX_C = [0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439]
+
+/** Simplex noise at (x, y), in about −1…1. */
+export function simplex2(x: number, y: number): number {
+  const [cx, cy, cz, cw] = SIMPLEX_C
+  const s = (x + y) * cy
+  let ix = Math.floor(x + s)
+  let iy = Math.floor(y + s)
+  const t = (ix + iy) * cx
+  const x0 = x - ix + t
+  const y0 = y - iy + t
+  const i1x = x0 > y0 ? 1 : 0
+  const i1y = 1 - i1x
+  const x1 = x0 + cx - i1x
+  const y1 = y0 + cx - i1y
+  const x2 = x0 + cz
+  const y2 = y0 + cz
+  ix = mod289(ix)
+  iy = mod289(iy)
+  const p0 = permute(permute(iy) + ix)
+  const p1 = permute(permute(iy + i1y) + ix + i1x)
+  const p2 = permute(permute(iy + 1) + ix + 1)
+  let total = 0
+  for (const [p, dx, dy] of [
+    [p0, x0, y0],
+    [p1, x1, y1],
+    [p2, x2, y2],
+  ]) {
+    let m = Math.max(0.5 - dx * dx - dy * dy, 0)
+    if (m === 0) continue
+    m *= m
+    m *= m
+    const gx = 2 * fract(p * cw) - 1
+    const h = Math.abs(gx) - 0.5
+    const a0 = gx - Math.floor(gx + 0.5)
+    m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h)
+    total += m * (a0 * dx + h * dy)
+  }
+  return 130 * total
+}
+
+/** Simplex noise mapped to 0…1. */
+const n01 = (x: number, y: number) => 0.5 + 0.5 * simplex2(x, y)
+
+/** The sketch's coverage: three octaves of noise, offset by the seed, about 0…1. */
+export function inkFbm(x: number, y: number, seed: number): number {
+  const qx = x + seed * 1.153
+  const qy = y - seed * 0.731
+  return 0.62 * n01(qx, qy) + 0.26 * n01(2.1 * qx + 3.7, 2.1 * qy - 1.3) + 0.12 * n01(4.3 * qx - 7.1, 4.3 * qy + 5.9)
+}
+
+/** A fixed random number in 0…1 per grain cell, channel `k` and seed. */
+export function inkHash(gx: number, gy: number, k: number, seed: number): number {
+  let h = Math.imul(gx | 0, 0x27d4eb2d) ^ Math.imul(gy | 0, 0x165667b1) ^ Math.imul(k * 0x3c6ef372 + seed, 0x9e3779b1) ^ SEED
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d)
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39)
+  h ^= h >>> 15
+  return (h >>> 0) / 0x100000000
+}
+
+/** Ink starve's settings in the pass's terms, plus where each bitmap pixel falls in the layer's own units. */
+export type InkStarveParams = {
+  /** Coverage threshold (0…0.8), its half-width, and the roller's falloff. */
+  starve: number
+  soft: number
+  roller: number
+  /** Roller direction in radians, y down (0 = drier to the right). */
+  angle: number
+  /** Spray strength (0…1) and the chance of a nick in solid ink. */
+  spray: number
+  nicks: number
+  seed: number
+  /** The layer's own box, the coverage blob size and the grain cell, in its units. */
+  boxWidth: number
+  boxHeight: number
+  blob: number
+  grain: number
+  /** Pixel (i, j)'s centre is at (x0 + i × dx, y0 + j × dy) from the box's top-left corner. */
+  x0: number
+  dx: number
+  y0: number
+  dy: number
+}
+
+/** How far the spray's haze spreads, in grain cells (σ of the blur); it reaches about 3σ past the edges. */
+const SPRAY_SIGMA = 2.5
+export const SPRAY_REACH = 3 * SPRAY_SIGMA
+
+/**
+ * A grain cell for `longer` (the layer's longer side, own units): 1/1000 of
+ * it, so a title across the artboard gets the sketch's one-pixel grain and a
+ * layer keeps the same grain however far it's scaled up.
+ */
+export const inkGrain = (longer: number) => Math.max(longer, 1) / 1000
+
+/**
+ * Maps the sliders onto the sketch's numbers (Ink starve 33 ≈ its look) and
+ * places a frame bitmap (`cols` × `rows` pixels of `cell` frame units, centred
+ * on the layer) in the layer's own units: frame units ÷ scale, mirrored by flips.
+ */
+export function inkStarveParams(
+  e: Effects,
+  layer: { width: number; height: number; scaleX: number; scaleY: number; flipX?: boolean; flipY?: boolean },
+  frame: { width: number; height: number; cell: number }
+): InkStarveParams {
+  const sx = (layer.scaleX || 1) * (layer.flipX ? -1 : 1)
+  const sy = (layer.scaleY || 1) * (layer.flipY ? -1 : 1)
+  const longer = Math.max(layer.width, layer.height, 1)
+  return {
+    starve: (0.8 * e.inkStarveAmount) / 100,
+    soft: e.inkSoftness / 100,
+    roller: e.inkRoller / 100,
+    angle: (e.inkRollerAngle * Math.PI) / 180,
+    spray: e.inkSpray / 100,
+    nicks: (e.inkNicks / 100) * 0.01,
+    seed: e.inkSeed,
+    boxWidth: Math.max(layer.width, 1),
+    boxHeight: Math.max(layer.height, 1),
+    blob: (e.inkBlobSize / 100) * longer,
+    grain: inkGrain(longer),
+    x0: (-frame.width / 2 + frame.cell / 2) / sx + layer.width / 2,
+    dx: frame.cell / sx,
+    y0: (-frame.height / 2 + frame.cell / 2) / sy + layer.height / 2,
+    dy: frame.cell / sy,
+  }
+}
+
+const smoothstep = (edge0: number, edge1: number, x: number) => {
+  if (edge1 <= edge0) return x >= edge0 ? 1 : 0
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)))
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * Starves an RGBA buffer in place (see the comment above `simplex2`). Kept
+ * ink keeps its colour; spray takes the blurred colour nearby; the rest
+ * becomes transparent. Coverage and mottle are worked out once per grain cell.
+ */
+export function applyInkStarve(data: Uint8ClampedArray, w: number, h: number, params: InkStarveParams) {
+  const { starve, soft, roller, spray, nicks, seed, boxWidth, boxHeight, blob, grain, x0, dx, y0, dy } = params
+  const cos = Math.cos(params.angle)
+  const sin = Math.sin(params.angle)
+
+  // The haze: the layer blurred by SPRAY_SIGMA grains, premultiplied (its alpha
+  // is the coverage nearby). It's smooth, so it's worked out on a grid `f`
+  // pixels apart (block averages, then the blur) and looked up per pixel.
+  let haze: Float32Array | null = null
+  const sigma = (SPRAY_SIGMA * grain) / Math.sqrt(Math.abs(dx * dy))
+  const f = Math.max(1, Math.floor(sigma / 1.5))
+  const hw = Math.ceil(w / f)
+  if (spray > 0) {
+    haze = new Float32Array(hw * Math.ceil(h / f) * 4)
+    const share = 1 / (f * f * 255)
+    for (let j = 0; j < h; j++) {
+      const row = ((j / f) | 0) * hw
+      for (let i = 0; i < w; i++) {
+        const at = (j * w + i) * 4
+        const alpha = data[at + 3]
+        if (alpha === 0) continue
+        const to = (row + ((i / f) | 0)) * 4
+        const weight = alpha * share
+        haze[to] += data[at] * weight
+        haze[to + 1] += data[at + 1] * weight
+        haze[to + 2] += data[at + 2] * weight
+        haze[to + 3] += alpha / (f * f)
+      }
+    }
+    boxBlurRGBA(haze, hw, Math.ceil(h / f), sigma / f)
+  }
+
+  // Grain cells under the bitmap, filled in as they're first needed.
+  const xs = [x0, x0 + (w - 1) * dx]
+  const ys = [y0, y0 + (h - 1) * dy]
+  const gx0 = Math.floor(Math.min(...xs) / grain)
+  const gy0 = Math.floor(Math.min(...ys) / grain)
+  const gw = Math.floor(Math.max(...xs) / grain) - gx0 + 1
+  const gh = Math.floor(Math.max(...ys) / grain) - gy0 + 1
+  const cover = new Float32Array(gw * gh).fill(-1)
+  const mottle = new Float32Array(gw * gh)
+  const cell = (gx: number, gy: number) => {
+    const g = (gy - gy0) * gw + (gx - gx0)
+    if (cover[g] < 0) {
+      const cx = (gx + 0.5) * grain
+      const cy = (gy + 0.5) * grain
+      const along = (cx / boxWidth - 0.5) * cos + (cy / boxHeight - 0.5) * sin
+      cover[g] = smoothstep(starve - soft, starve + soft, inkFbm(cx / blob, cy / blob, seed) - along * roller)
+      mottle[g] = 0.86 + 0.14 * n01(cx / (3 * grain) + seed * 7.31, cy / (3 * grain) - seed * 3.17)
+    }
+    return g
+  }
+
+  for (let j = 0; j < h; j++) {
+    const gy = Math.floor((y0 + j * dy) / grain)
+    const hazeRow = ((j / f) | 0) * hw
+    for (let i = 0; i < w; i++) {
+      const at = (j * w + i) * 4
+      const near = (hazeRow + ((i / f) | 0)) * 4
+      const a = data[at + 3] / 255
+      const ha = haze ? haze[near + 3] / 255 : 0
+      if (a <= 0 && ha <= 0.02) continue
+      const gx = Math.floor((x0 + i * dx) / grain)
+      const g = cell(gx, gy)
+      const p = cover[g]
+      let alpha = 0
+      if (a > 0 && inkHash(gx, gy, 1, seed) < p) alpha = a * mottle[g]
+      if (alpha > 0 && inkHash(gx, gy, 2, seed) < nicks * (1.5 - p)) alpha = 0
+      if (alpha > 0) {
+        data[at + 3] = alpha * 255
+      } else if (haze && ha > 0.02 && a < 0.5 && inkHash(gx, gy, 3, seed) < ha * spray * 4 * p * (1 - p)) {
+        data[at] = haze[near] / ha
+        data[at + 1] = haze[near + 1] / ha
+        data[at + 2] = haze[near + 2] / ha
+        data[at + 3] = 0.55 * 255
+      } else {
+        data[at] = data[at + 1] = data[at + 2] = data[at + 3] = 0
+      }
+    }
+  }
+}
+
 // Reused between frames: the layer being composed, and a working copy (tint, noise).
 let layers: [HTMLCanvasElement, HTMLCanvasElement] | null = null
 
@@ -478,9 +783,9 @@ function localFrame(object: FabricObject, cellSize: number, group: TMat2D, margi
 
 type Frame = ReturnType<typeof localFrame>
 
-// Per object: the dithered bitmap, the noise texture and the overprinted text, each with the key it was made for.
+// Per object: the dithered bitmap, the noise texture and the printed (overprinted or starved) layer, each with the key it was made for.
 type Cached = { key: string; canvas: HTMLCanvasElement }
-const cache = new WeakMap<FabricObject, { dither?: Cached; noise?: Cached; overprint?: Cached }>()
+const cache = new WeakMap<FabricObject, { dither?: Cached; noise?: Cached; printed?: Cached }>()
 // Bumped whenever Fabric marks an object's content changed (fill, path, image…).
 const versions = new WeakMap<FabricObject, number>()
 
@@ -490,9 +795,10 @@ const cacheOf = (object: FabricObject) => {
   return entry
 }
 
-/** Tests only: how many times the dither and overprint passes have run. */
+/** Tests only: how many times the dither, overprint and ink starve passes have run. */
 export const ditherRuns = { count: 0 }
 export const overprintRuns = { count: 0 }
+export const inkStarveRuns = { count: 0 }
 
 /**
  * The layer as a 1-bit bitmap in its own frame, one canvas pixel per cell:
@@ -592,10 +898,11 @@ function drawInFrame(ctx: CanvasRenderingContext2D, bitmap: HTMLCanvasElement, f
 
 type Render = (ctx: CanvasRenderingContext2D) => void
 
+type Target = { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }
+
 /**
- * Tint, noise and dither: compose the layer offscreen in a box of device
- * pixels, then draw it onto the canvas once (blurred, with the object's
- * composite operation). In order:
+ * Tint, noise and dither, composed into `target` (`w` × `h` pixels) with
+ * `base` mapping the parent's coordinates onto it. In order:
  * 1. the source: the dithered bitmap, or the object rendered with brightness/contrast/saturation;
  * 2. noise without dither: grey grain blended in with `overlay`, in the object's frame;
  * 3. tint: a copy in the object's shading × the tint colour (screened instead
@@ -604,36 +911,20 @@ type Render = (ctx: CanvasRenderingContext2D) => void
  * alpha (`destination-in`) and mix it back with `source-atop`, so transparent
  * areas stay clear and soft edges keep their alpha.
  */
-function renderLayered(
+function compose(
   object: FabricObject,
-  ctx: CanvasRenderingContext2D,
   e: Effects,
   render: Render,
-  filters: boolean
+  filters: boolean,
+  target: Target,
+  w: number,
+  h: number,
+  base: TMat2D,
+  frame: Frame | null,
+  bitmap: HTMLCanvasElement | null
 ) {
-  const t = ctx.getTransform()
-  const parent: TMat2D = [t.a, t.b, t.c, t.d, t.e, t.f]
-  const margin = filters ? 3 * blurRadius(e.blurAmount, t) : 0
-  const group = groupMatrix(object, ctx)
-  const frame = needsPixels(e) ? localFrame(object, e.ditherEnabled ? e.ditherPixelSize : 1, group) : null
-  const bitmap = e.ditherEnabled && frame ? ditherBitmap(object, e, frame, filters, render) : null
-
-  let box: Box | null
-  if (frame) {
-    box = tintBox(frame.width / 2, frame.height / 2, util.multiplyTransformMatrices(parent, frame.placement), margin, ctx.canvas.width, ctx.canvas.height)
-  } else {
-    const size = object._getNonTransformedDimensions()
-    const reach = shadowReach(object)
-    const matrix = util.multiplyTransformMatrices(parent, util.multiplyTransformMatrices(group, object.calcOwnMatrix()))
-    box = tintBox(size.x / 2 + reach, size.y / 2 + reach, matrix, margin, ctx.canvas.width, ctx.canvas.height)
-  }
-  if (!box) return
-  const w = box.width
-  const h = box.height
-  const shifted: TMat2D = [t.a, t.b, t.c, t.d, t.e - box.x, t.f - box.y]
-
-  const source = layer(0, box)
-  source.ctx.setTransform(...shifted)
+  const source = target
+  source.ctx.setTransform(...base)
   if (bitmap && frame) {
     source.ctx.globalAlpha = object.opacity
     drawInFrame(source.ctx, bitmap, frame)
@@ -645,7 +936,7 @@ function renderLayered(
   }
 
   const mixIn = (paint: (copy: CanvasRenderingContext2D) => void, strength: number) => {
-    const copy = layer(1, box)
+    const copy = layer(1, { x: 0, y: 0, width: w, height: h })
     paint(copy.ctx)
     copy.ctx.setTransform(1, 0, 0, 1, 0, 0)
     copy.ctx.globalCompositeOperation = 'destination-in'
@@ -663,7 +954,7 @@ function renderLayered(
     const texture = noiseTexture(object, frame)
     mixIn((copy) => {
       copy.drawImage(source.canvas, 0, 0, w, h, 0, 0, w, h)
-      copy.setTransform(...shifted)
+      copy.setTransform(...base)
       copy.globalCompositeOperation = 'overlay'
       copy.globalAlpha = e.noiseAmount / 100
       drawInFrame(copy, texture, frame)
@@ -684,12 +975,52 @@ function renderLayered(
       copy.globalCompositeOperation = 'source-over'
     }, e.tintAmount / 100)
   }
+}
+
+/** The local frame and 1-bit bitmap behind noise and dither (null where neither is on, or the bitmap can't be read). */
+function pixelSources(object: FabricObject, e: Effects, group: TMat2D, filters: boolean, render: Render) {
+  const frame = needsPixels(e) ? localFrame(object, e.ditherEnabled ? e.ditherPixelSize : 1, group) : null
+  const bitmap = e.ditherEnabled && frame ? ditherBitmap(object, e, frame, filters, render) : null
+  return { frame, bitmap }
+}
+
+/**
+ * Tint, noise and dither: compose the layer offscreen in a box of device
+ * pixels (see `compose`), then draw it onto the canvas once (blurred, with the
+ * object's composite operation).
+ */
+function renderLayered(
+  object: FabricObject,
+  ctx: CanvasRenderingContext2D,
+  e: Effects,
+  render: Render,
+  filters: boolean
+) {
+  const t = ctx.getTransform()
+  const parent: TMat2D = [t.a, t.b, t.c, t.d, t.e, t.f]
+  const margin = filters ? 3 * blurRadius(e.blurAmount, t) : 0
+  const group = groupMatrix(object, ctx)
+  const { frame, bitmap } = pixelSources(object, e, group, filters, render)
+
+  let box: Box | null
+  if (frame) {
+    box = tintBox(frame.width / 2, frame.height / 2, util.multiplyTransformMatrices(parent, frame.placement), margin, ctx.canvas.width, ctx.canvas.height)
+  } else {
+    const size = object._getNonTransformedDimensions()
+    const reach = shadowReach(object)
+    const matrix = util.multiplyTransformMatrices(parent, util.multiplyTransformMatrices(group, object.calcOwnMatrix()))
+    box = tintBox(size.x / 2 + reach, size.y / 2 + reach, matrix, margin, ctx.canvas.width, ctx.canvas.height)
+  }
+  if (!box) return
+  const shifted: TMat2D = [t.a, t.b, t.c, t.d, t.e - box.x, t.f - box.y]
+  const source = layer(0, box)
+  compose(object, e, render, filters, source, box.width, box.height, shifted, frame, bitmap)
 
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.filter = (filters && blurFilter(e, t)) || 'none'
   ctx.globalCompositeOperation = object.globalCompositeOperation
-  ctx.drawImage(source.canvas, 0, 0, w, h, box.x, box.y, w, h)
+  ctx.drawImage(source.canvas, 0, 0, box.width, box.height, box.x, box.y, box.width, box.height)
   ctx.restore()
 }
 
@@ -709,17 +1040,52 @@ export function overprintCell(scale: number): number {
   return 2 ** (-Math.ceil(2 * Math.log2(scale)) / 2)
 }
 
+/** One Ink starve grain cell in artboard units, at the layer's scale (the smaller axis, so it's never coarser). */
+function inkGrainSize(object: FabricObject) {
+  return inkGrain(Math.max(object.width, object.height)) * Math.min(Math.abs(object.scaleX), Math.abs(object.scaleY))
+}
+
+/** How far the printed effects spread past the outline, in artboard units: Overprint's 3σ, and Ink starve's spray. */
+function printMargin(object: FabricObject, e: Effects) {
+  const overprint = e.deteriorationAmount > 0 ? 3 * overprintSigma(object, e) : 0
+  const spray =
+    e.inkStarveAmount > 0 && e.inkSpray > 0
+      ? SPRAY_REACH * inkGrain(Math.max(object.width, object.height)) * Math.max(Math.abs(object.scaleX), Math.abs(object.scaleY))
+      : 0
+  return overprint + spray
+}
+
 /**
- * The text overprinted in its own frame, about one pixel per device pixel:
- * rendered without its shadow (cast when drawn) at full opacity, then
- * `applyOverprint`. Cached until anything it depends on changes (not
- * position, angle, or zoom within a √2 step). Null when the pixels can't be
- * read (a tainted pattern fill).
+ * The printed layer in its own frame, about one pixel per device pixel (and
+ * never coarser than an Ink starve grain), without its shadow (cast when
+ * drawn) and at full opacity:
+ * - text is rendered, then overprinted (Deterioration > 0), then starved;
+ * - an image is composed (adjustments, noise, dither, tint), then starved.
+ * Cached until anything it depends on changes (not position, angle, or zoom
+ * within a √2 step). Null when the pixels can't be read (a tainted image or
+ * pattern fill).
  */
-function overprintBitmap(object: FabricObject, e: Effects, frame: Frame, sigma: number, render: Render) {
+function printedBitmap(object: FabricObject, e: Effects, frame: Frame, group: TMat2D, filters: boolean, render: Render) {
+  const text = isText(object)
+  const sigma = text ? overprintSigma(object, e) : 0
+  const src = (object as { getSrc?: () => string }).getSrc?.() ?? ''
   const key = [
     e.deteriorationAmount,
     e.overprintAmount,
+    e.inkStarveAmount,
+    ...INK_STARVE_SETTINGS.map((k) => e[k]),
+    ...(text
+      ? [(object as { text?: string }).text ?? '']
+      : [
+          filters ? adjustFilter(e) : '',
+          filters ? `${e.tintAmount}/${e.tintColor}/${e.tintInvert}` : '',
+          e.noiseAmount,
+          e.ditherEnabled,
+          e.ditherPixelSize,
+          e.ditherKnockout,
+          src.length,
+          src.slice(-64),
+        ]),
     frame.cell,
     frame.cols,
     frame.rows,
@@ -730,58 +1096,71 @@ function overprintBitmap(object: FabricObject, e: Effects, frame: Frame, sigma: 
     object.flipX,
     object.flipY,
     versions.get(object) ?? 0,
-    (object as { text?: string }).text ?? '',
   ].join('|')
   const entry = cacheOf(object)
-  if (entry.overprint?.key === key) return entry.overprint.canvas
+  if (entry.printed?.key === key) return entry.printed.canvas
 
-  const canvas = entry.overprint?.canvas ?? document.createElement('canvas')
+  const canvas = entry.printed?.canvas ?? document.createElement('canvas')
   canvas.width = frame.cols
   canvas.height = frame.rows
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  // Local frame → bitmap pixels, undoing the object's placement so Fabric's
+  // own matrix only adds its scale, skew and flip.
   const toPixels = util.multiplyTransformMatrices(
     [1 / frame.cell, 0, 0, 1 / frame.cell, frame.width / 2 / frame.cell, frame.height / 2 / frame.cell],
     util.invertTransform(frame.placement)
   )
-  ctx.setTransform(...toPixels)
-  ctx.filter = 'none'
   const { opacity, shadow } = object
   object.opacity = 1
   object.shadow = null
   try {
-    render.call(object, ctx)
+    if (text) {
+      ctx.setTransform(...toPixels)
+      ctx.filter = 'none'
+      render.call(object, ctx)
+    } else {
+      const { frame: pixels, bitmap } = pixelSources(object, e, group, filters, render)
+      compose(object, e, render, filters, { canvas, ctx }, frame.cols, frame.rows, toPixels, pixels, bitmap)
+    }
   } finally {
     object.opacity = opacity
     object.shadow = shadow
   }
   try {
     const image = ctx.getImageData(0, 0, frame.cols, frame.rows)
-    applyOverprint(image.data, frame.cols, frame.rows, sigma / frame.cell, e.overprintAmount)
+    if (sigma > 0) {
+      applyOverprint(image.data, frame.cols, frame.rows, sigma / frame.cell, e.overprintAmount)
+      overprintRuns.count++
+    }
+    if (e.inkStarveAmount > 0) {
+      applyInkStarve(image.data, frame.cols, frame.rows, inkStarveParams(e, object, frame))
+      inkStarveRuns.count++
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.putImageData(image, 0, 0)
   } catch {
-    entry.overprint = undefined
+    entry.printed = undefined
     return null
   }
-  overprintRuns.count++
-  entry.overprint = { key, canvas }
+  entry.printed = { key, canvas }
   return canvas
 }
 
 /**
- * Overprinted text: the cached bitmap drawn in the object's frame with its
- * opacity, composite operation and shadow (so the shadow follows the worn
- * shapes), blurred last by Blur where canvas filters work.
+ * Overprinted or starved layers: the cached bitmap drawn in the object's
+ * frame with its opacity, composite operation and shadow (so the shadow
+ * follows the printed shapes), blurred last by Blur where canvas filters work.
+ * False when the bitmap can't be made.
  */
-function renderOverprint(object: FabricObject, ctx: CanvasRenderingContext2D, e: Effects, render: Render, filters: boolean) {
+function renderPrinted(object: FabricObject, ctx: CanvasRenderingContext2D, e: Effects, render: Render, filters: boolean) {
   const t = ctx.getTransform()
   const group = groupMatrix(object, ctx)
   const device = util.multiplyTransformMatrices([t.a, t.b, t.c, t.d, t.e, t.f], group)
-  const sigma = overprintSigma(object, e)
-  // Bolder letters spread up to about 3σ past their outlines.
-  const frame = localFrame(object, overprintCell(Math.hypot(device[0], device[1])), group, 3 * sigma)
-  const bitmap = overprintBitmap(object, e, frame, sigma, render)
-  if (!bitmap) return render.call(object, ctx)
+  let cell = overprintCell(Math.hypot(device[0], device[1]))
+  if (e.inkStarveAmount > 0) cell = Math.min(cell, inkGrainSize(object))
+  const frame = localFrame(object, cell, group, printMargin(object, e))
+  const bitmap = printedBitmap(object, e, frame, group, filters, render)
+  if (!bitmap) return false
   ctx.save()
   try {
     ctx.filter = (filters && blurFilter(e, t)) || 'none'
@@ -792,12 +1171,19 @@ function renderOverprint(object: FabricObject, ctx: CanvasRenderingContext2D, e:
   } finally {
     ctx.restore()
   }
+  return true
 }
 
-/** How far Overprint can spread text past its outline, in artboard units (0 for anything else). */
-export function overprintSpill(object: FabricObject): number {
-  const e = getEffects(object)
-  return isText(object) && e.deteriorationAmount > 0 ? 3 * overprintSigma(object, e) : 0
+/** The effects that apply to this kind of layer: Overprint on text only, Ink starve on text and images. */
+function effectsFor(object: FabricObject, e: Effects): Effects {
+  if (e.deteriorationAmount > 0 && !isText(object)) e.deteriorationAmount = 0
+  if (e.inkStarveAmount > 0 && !isText(object) && !isImage(object)) e.inkStarveAmount = 0
+  return e
+}
+
+/** How far Overprint and Ink starve's spray can spread a layer past its outline, in artboard units (0 where they don't apply). */
+export function printSpill(object: FabricObject): number {
+  return printMargin(object, effectsFor(object, getEffects(object)))
 }
 
 let installed = false
@@ -822,10 +1208,12 @@ export function installObjectEffects() {
     const e = getEffects(this)
     if (this.isNotVisible()) return render.call(this, ctx)
     const filters = canvasFiltersSupported()
-    if (e.deteriorationAmount > 0) {
-      if (isText(this)) return renderOverprint(this, ctx, e, render, filters)
-      // Only offered on text; ignored anywhere else.
-      e.deteriorationAmount = 0
+    effectsFor(this, e)
+    if (e.deteriorationAmount > 0 || e.inkStarveAmount > 0) {
+      if (renderPrinted(this, ctx, e, render, filters)) return
+      if (isText(this)) return render.call(this, ctx)
+      // An image whose pixels can't be read: the rest of its effects still apply.
+      e.inkStarveAmount = 0
     }
     if (!hasEffects(e)) return render.call(this, ctx)
     if (needsPixels(e) || (filters && e.tintAmount > 0)) return renderLayered(this, ctx, e, render, filters)

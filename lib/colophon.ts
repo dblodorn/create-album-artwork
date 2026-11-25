@@ -50,6 +50,7 @@ export const COLOPHON: ColophonSection[] = [
     heading: 'Prior work',
     entries: [
       { name: "Mark Hurrell's overprint generator", url: 'https://thinkmake.github.io/overprinter.markhurrell.com/', note: "Overprint: blur, then cut alpha through the generator's curve." },
+      { name: 'Simplex noise (Ashima Arts, Stefan Gustavson)', url: 'https://github.com/ashima/webgl-noise', note: 'Ink starve: the coverage noise, ported from GLSL (MIT).' },
       { name: 'Atkinson dithering', url: 'https://beyondloom.com/blog/dither.html', note: "Dither: Bill Atkinson's error diffusion from MacPaint." },
       { name: 'Fabric.js', url: 'https://www.fabricjs.com', note: 'The canvas: objects, selection, text and export.' },
       { name: 'dnd-kit', url: 'https://dndkit.com', note: 'Drag to reorder in the Layers panel.' },

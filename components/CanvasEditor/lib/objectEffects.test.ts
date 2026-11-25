@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import { ActiveSelection, Canvas, type FabricObject, Path, Rect, Shadow, Textbox } from 'fabric'
+import { ActiveSelection, Canvas, FabricImage, type FabricObject, Path, Rect, Shadow, Textbox } from 'fabric'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { captureSnapshot, restoreSnapshot } from './history'
 import {
+  EFFECT_KEYS,
+  EFFECT_LABEL,
+  type InkStarveParams,
   NEUTRAL_EFFECTS,
   addNoise,
+  applyInkStarve,
   applyOverprint,
   atkinson,
   blurRadius,
@@ -17,6 +21,10 @@ import {
   getBlur,
   getEffects,
   hasEffects,
+  inkFbm,
+  inkStarveRuns,
+  inkHash,
+  inkStarveParams,
   installObjectEffects,
   noise,
   normaliseColor,
@@ -24,6 +32,7 @@ import {
   overprintRuns,
   overprintTable,
   setFiltersSupportedForTests,
+  simplex2,
   tintBox,
 } from './objectEffects'
 
@@ -749,5 +758,282 @@ describe('overprint cache', () => {
     rect.set({ deteriorationAmount: 0.05 } as never)
     rect.render(ctx)
     expect(runs() - start).toBe(3)
+  })
+})
+
+describe('Ink starve properties', () => {
+  const DEFAULTS = { inkStarveAmount: 0, inkSoftness: 13, inkRoller: 55, inkRollerAngle: 14, inkBlobSize: 12, inkSpray: 22, inkNicks: 25, inkSeed: 1 }
+
+  it('load from an older scene as off, with the sketch defaults', async () => {
+    expect(getEffects(await Textbox.fromObject({ text: 'A' }))).toMatchObject(DEFAULTS)
+    expect(getEffects({})).toMatchObject(DEFAULTS)
+  })
+
+  it('clamp out-of-range values', () => {
+    expect(
+      getEffects({ inkStarveAmount: 140, inkSoftness: -3, inkRollerAngle: 400, inkBlobSize: 1, inkSeed: 0, inkNicks: 'x' })
+    ).toMatchObject({ inkStarveAmount: 100, inkSoftness: 0, inkRollerAngle: 359, inkBlobSize: 2, inkSeed: 1, inkNicks: 25 })
+  })
+
+  it('serialise on text and images and keep set values through clone', async () => {
+    const text = new Textbox('Dry')
+    expect(text.toObject()).toMatchObject(DEFAULTS)
+    text.set({ inkStarveAmount: 45, inkRollerAngle: 90, inkSeed: 7 } as never)
+    expect(getEffects(await text.clone())).toMatchObject({ inkStarveAmount: 45, inkRollerAngle: 90, inkSeed: 7 })
+    const image = new FabricImage(document.createElement('canvas'))
+    image.set({ inkStarveAmount: 50, inkSpray: 70 } as never)
+    expect(image.toObject()).toMatchObject({ inkStarveAmount: 50, inkSpray: 70, inkNicks: 25 })
+  })
+
+  it('count the settings only while Ink starve is on', () => {
+    expect(hasEffects(fx({ inkRoller: 90, inkSeed: 4, inkSpray: 0, inkSoftness: 40 }))).toBe(false)
+    expect(hasEffects(fx({ inkStarveAmount: 1 }))).toBe(true)
+  })
+
+  it('have undo labels whose merge keys are all distinct', () => {
+    const keys = EFFECT_KEYS.map((key) => EFFECT_LABEL[key].toLowerCase())
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(EFFECT_LABEL.inkStarveAmount).toBe('Ink starve')
+    expect(EFFECT_LABEL.inkRollerAngle).toBe('Roller angle')
+  })
+})
+
+describe('simplex2 / inkFbm', () => {
+  it('stays within −1…1 and is continuous', () => {
+    let min = Infinity
+    let max = -Infinity
+    for (let y = 0; y < 60; y++) {
+      for (let x = 0; x < 60; x++) {
+        const v = simplex2(x * 0.37, y * 0.29)
+        min = Math.min(min, v)
+        max = Math.max(max, v)
+        expect(Math.abs(simplex2(x * 0.37 + 0.001, y * 0.29) - v)).toBeLessThan(0.02)
+      }
+    }
+    expect(min).toBeGreaterThanOrEqual(-1)
+    expect(max).toBeLessThanOrEqual(1)
+    expect(max - min).toBeGreaterThan(1)
+  })
+
+  it('keeps pinned values', () => {
+    expect(simplex2(0, 0)).toBe(0)
+    expect(simplex2(1.3, 2.7)).toBeCloseTo(-0.6945, 4)
+    expect(simplex2(-4.1, 0.6)).toBeCloseTo(0.45, 4)
+  })
+
+  it('gives coverage about 0…1 that changes with the seed', () => {
+    const a = inkFbm(1.2, 3.4, 1)
+    expect(a).toBeGreaterThan(0)
+    expect(a).toBeLessThan(1)
+    expect(inkFbm(1.2, 3.4, 2)).not.toBeCloseTo(a, 3)
+  })
+})
+
+describe('inkHash', () => {
+  it('is deterministic, differs by channel and seed, and averages 0.5', () => {
+    expect(inkHash(3, 9, 1, 1)).toBe(inkHash(3, 9, 1, 1))
+    expect(inkHash(3, 9, 1, 1)).not.toBe(inkHash(3, 9, 2, 1))
+    expect(inkHash(3, 9, 1, 1)).not.toBe(inkHash(3, 9, 1, 2))
+    let sum = 0
+    for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) sum += inkHash(x, y, 1, 1)
+    expect(sum / 65536).toBeCloseTo(0.5, 2)
+  })
+})
+
+describe('applyInkStarve', () => {
+  // 1000 units across, so one grain cell per pixel, as on the canvas.
+  const W = 1000
+  const H = 300
+  /** A W×H buffer: transparent with an opaque block of `rgb` from (x0, y0) to (x1, y1). */
+  const block = (rgb: [number, number, number] = [0, 0, 0], x0 = 10, y0 = 10, x1 = W - 10, y1 = H - 10) => {
+    const data = new Uint8ClampedArray(W * H * 4)
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) data.set([...rgb, 255], (y * W + x) * 4)
+    return data
+  }
+  /** Settings at one bitmap pixel per unit on a layer the size of the buffer. */
+  const params = (props: Partial<typeof NEUTRAL_EFFECTS> = {}): InkStarveParams =>
+    inkStarveParams(fx({ inkStarveAmount: 40, ...props }), { width: W, height: H, scaleX: 1, scaleY: 1 }, { width: W, height: H, cell: 1 })
+  const starved = (props: Partial<typeof NEUTRAL_EFFECTS> = {}, data = block()) => {
+    applyInkStarve(data, W, H, params(props))
+    return data
+  }
+  /** Total alpha in columns [x0, x1). */
+  const ink = (data: Uint8ClampedArray, x0 = 0, x1 = W) => {
+    let sum = 0
+    for (let y = 0; y < H; y++) for (let x = x0; x < x1; x++) sum += data[(y * W + x) * 4 + 3]
+    return sum
+  }
+
+  it('maps the sliders onto the sketch numbers', () => {
+    const p = params({ inkStarveAmount: 33 })
+    expect(p.starve).toBeCloseTo(0.264)
+    expect(p).toMatchObject({ soft: 0.13, roller: 0.55, spray: 0.22, nicks: 0.0025, seed: 1, grain: 1 })
+    expect(p.angle).toBeCloseTo(0.2443, 3)
+    expect(p.blob).toBeCloseTo(0.12 * W)
+    // Pixel centres from the box's top-left corner; scaling the layer doesn't move them in its own units.
+    expect([p.x0, p.dx, p.y0, p.dy]).toEqual([0.5, 1, 0.5, 1])
+    const scaled = inkStarveParams(fx({}), { width: W, height: H, scaleX: 2, scaleY: 2 }, { width: 2 * W, height: 2 * H, cell: 2 })
+    expect([scaled.x0, scaled.dx, scaled.y0, scaled.dy]).toEqual([0.5, 1, 0.5, 1])
+    const flipped = inkStarveParams(fx({}), { width: W, height: H, scaleX: 1, scaleY: 1, flipX: true }, { width: W, height: H, cell: 1 })
+    expect([flipped.x0, flipped.dx]).toEqual([W - 0.5, -1])
+  })
+
+  it('is the same every time, and another seed gives another pattern with about as much ink', () => {
+    const a = starved()
+    expect(Array.from(starved())).toEqual(Array.from(a))
+    const b = starved({ inkSeed: 2 })
+    expect(Array.from(b)).not.toEqual(Array.from(a))
+    expect(Math.abs(ink(b) - ink(a)) / ink(a)).toBeLessThan(0.1)
+  })
+
+  it('leaves less ink at a higher Ink starve', () => {
+    expect(ink(starved({ inkStarveAmount: 70 }))).toBeLessThan(ink(starved({ inkStarveAmount: 30 })))
+  })
+
+  it('dries the side the roller angle points to', () => {
+    const data = starved({ inkStarveAmount: 40, inkRoller: 80, inkRollerAngle: 0 })
+    expect(ink(data, W / 2, W)).toBeLessThan(ink(data, 0, W / 2))
+    const left = starved({ inkStarveAmount: 40, inkRoller: 80, inkRollerAngle: 180 })
+    expect(ink(left, 0, W / 2)).toBeLessThan(ink(left, W / 2, W))
+  })
+
+  it('sprays nothing past the edges at Spray 0', () => {
+    const data = starved({ inkSpray: 0 })
+    const source = block()
+    for (let i = 3; i < data.length; i += 4) if (source[i] === 0) expect(data[i]).toBe(0)
+  })
+
+  it('sprays only near the edges, in the colour nearby', () => {
+    const data = starved({ inkStarveAmount: 50, inkSpray: 100 }, block([255, 0, 0]))
+    let outside = 0
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const at = (y * W + x) * 4
+        const inBlock = x >= 10 && x < W - 10 && y >= 10 && y < H - 10
+        if (inBlock || data[at + 3] === 0) continue
+        outside++
+        const distance = Math.max(10 - x, x - (W - 11), 10 - y, y - (H - 11))
+        expect(distance).toBeLessThanOrEqual(8)
+        expect(data[at]).toBeGreaterThan(250)
+        expect(data[at + 1]).toBe(0)
+        expect(data[at + 3]).toBe(140)
+      }
+    }
+    expect(outside).toBeGreaterThan(0)
+  })
+
+  it('cuts no nicks at Nicks 0 where the ink holds', () => {
+    const data = starved({ inkStarveAmount: 1, inkSoftness: 0, inkRoller: 0, inkNicks: 0, inkSpray: 0 })
+    const source = block()
+    for (let i = 3; i < data.length; i += 4) if (source[i] === 255) expect(data[i]).toBeGreaterThan(200)
+    const nicked = starved({ inkStarveAmount: 1, inkSoftness: 0, inkRoller: 0, inkNicks: 100, inkSpray: 0 })
+    expect(ink(nicked)).toBeLessThan(ink(data))
+  })
+
+  it('makes an opaque image transparent in places and keeps its colours', () => {
+    const data = new Uint8ClampedArray(W * H * 4)
+    for (let i = 0; i < W * H; i++) data.set([i % 256, (i * 7) % 256, 90, 255], i * 4)
+    const source = data.slice()
+    applyInkStarve(data, W, H, params({ inkStarveAmount: 50, inkSpray: 0 }))
+    let clear = 0
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] === 0) clear++
+      else expect(Array.from(data.slice(i, i + 3))).toEqual(Array.from(source.slice(i, i + 3)))
+    }
+    expect(clear).toBeGreaterThan(0)
+    expect(clear).toBeLessThan(W * H)
+  })
+})
+
+describe('ink starve cache', () => {
+  afterEach(() => setFiltersSupportedForTests(null))
+  const context = () => {
+    const ctx = document.createElement('canvas').getContext('2d')!
+    ctx.canvas.width = ctx.canvas.height = 400
+    Object.assign(ctx, { getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) })
+    return ctx
+  }
+  const runs = () => inkStarveRuns.count
+
+  it('starves text once, again on a text or setting change, not on move or rotate', () => {
+    setFiltersSupportedForTests(false)
+    const ctx = context()
+    const text = new Textbox('Dry', { left: 100, top: 100, fontSize: 40 })
+    text.set({ inkStarveAmount: 40 } as never)
+    const start = runs()
+    text.render(ctx)
+    text.render(ctx)
+    expect(runs() - start).toBe(1)
+
+    text.set({ left: 220, angle: 30 })
+    text.render(ctx)
+    expect(runs() - start).toBe(1)
+
+    text.set({ text: 'Dry ink' })
+    text.render(ctx)
+    expect(runs() - start).toBe(2)
+
+    let expected = 2
+    for (const [key, value] of [
+      ['inkSeed', 2],
+      ['inkSoftness', 20],
+      ['inkRoller', 70],
+      ['inkRollerAngle', 90],
+      ['inkBlobSize', 20],
+      ['inkSpray', 50],
+      ['inkNicks', 60],
+      ['inkStarveAmount', 55],
+    ] as const) {
+      text.set({ [key]: value } as never)
+      text.render(ctx)
+      expect(runs() - start, key).toBe(++expected)
+    }
+  })
+
+  it('runs Overprint and Ink starve together on worn text', () => {
+    setFiltersSupportedForTests(false)
+    const ctx = context()
+    const text = new Textbox('Dry', { left: 100, top: 100, fontSize: 40 })
+    text.set({ deteriorationAmount: 0.05, inkStarveAmount: 40 } as never)
+    const starved = runs()
+    const worn = overprintRuns.count
+    text.render(ctx)
+    expect(runs() - starved).toBe(1)
+    expect(overprintRuns.count - worn).toBe(1)
+  })
+
+  it('starves an image, again when its source changes', () => {
+    setFiltersSupportedForTests(false)
+    const ctx = context()
+    const element = document.createElement('canvas')
+    element.width = element.height = 50
+    const image = new FabricImage(element, { left: 100, top: 100 })
+    image.set({ inkStarveAmount: 40 } as never)
+    const start = runs()
+    image.render(ctx)
+    image.render(ctx)
+    expect(runs() - start).toBe(1)
+    image.set({ left: 150 })
+    image.render(ctx)
+    expect(runs() - start).toBe(1)
+    image.set({ noiseAmount: 20 } as never)
+    image.render(ctx)
+    expect(runs() - start).toBe(2)
+    vi.spyOn(image, 'getSrc').mockReturnValue('data:image/png;base64,another')
+    image.render(ctx)
+    expect(runs() - start).toBe(3)
+  })
+
+  it('never starves a shape or a drawing', () => {
+    setFiltersSupportedForTests(false)
+    const ctx = context()
+    const rect = new Rect({ left: 50, top: 50, width: 20, height: 20 })
+    const path = new Path('M 0 0 L 10 10')
+    rect.set({ inkStarveAmount: 40 } as never)
+    path.set({ inkStarveAmount: 40 } as never)
+    const start = runs()
+    rect.render(ctx)
+    path.render(ctx)
+    expect(runs() - start).toBe(0)
   })
 })

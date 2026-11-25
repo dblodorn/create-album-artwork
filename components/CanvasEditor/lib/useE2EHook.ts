@@ -20,6 +20,8 @@ export type E2EHook = {
     left: number
     top: number
     center: { x: number; y: number }
+    /** Scaled width and height, in artboard units. */
+    size: { width: number; height: number }
     fill?: string
     effects: Effects
     visible: boolean
@@ -65,6 +67,7 @@ export function useE2EHook({
           left: o.left,
           top: o.top,
           center: { x: o.getCenterPoint().x, y: o.getCenterPoint().y },
+          size: { width: o.getScaledWidth(), height: o.getScaledHeight() },
           fill: typeof o.fill === 'string' ? o.fill : undefined,
           effects: getEffects(o),
           visible: o.visible,
