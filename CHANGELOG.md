@@ -4,6 +4,11 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-24 — Colophon
+
+- The 🎨 menu has a new Colophon…, between Changelog… and View on GitHub. It credits the people, tools and prior work behind the editor: UX, what it was built with, the typefaces, the design system, and the sources behind Overprint, Dither, the canvas and background removal.
+- Every name links to its page in a new tab.
+
 ## 2026-11-24 — Overprint for text
 
 - Text layers have a new Overprint section in Effects, after Mark Hurrell's overprint generator. Deterioration blurs the letters and Overprint cuts them back to a hard edge, so type comes out with rounded corners and ink-spread or worn edges, in its own colour.

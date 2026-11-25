@@ -4,6 +4,7 @@ import { Button, DropdownMenu } from 'reshaped'
 import { COLOR_MODE_CHOICES, type ColorModeChoice, useColorMode } from '@/design'
 
 import { ChangelogModal } from './ChangelogModal'
+import { ColophonModal } from './ColophonModal'
 import { SHORTCUTS_OFF } from './lib/keyboard'
 
 const REPO_URL = 'https://github.com/dblodorn/create-album-artwork'
@@ -16,6 +17,7 @@ const APPEARANCE_LABELS: Record<ColorModeChoice, string> = {
 
 export function AppMenu() {
   const [changelogOpen, setChangelogOpen] = useState(false)
+  const [colophonOpen, setColophonOpen] = useState(false)
   const { choice, setChoice } = useColorMode()
 
   return (
@@ -35,6 +37,7 @@ export function AppMenu() {
         <DropdownMenu.Content attributes={SHORTCUTS_OFF}>
           <DropdownMenu.Section>
             <DropdownMenu.Item onClick={() => setChangelogOpen(true)}>Changelog…</DropdownMenu.Item>
+            <DropdownMenu.Item onClick={() => setColophonOpen(true)}>Colophon…</DropdownMenu.Item>
             <DropdownMenu.Item
               onClick={() => window.open(REPO_URL, '_blank', 'noopener,noreferrer')}
             >
@@ -58,6 +61,7 @@ export function AppMenu() {
         </DropdownMenu.Content>
       </DropdownMenu>
       <ChangelogModal active={changelogOpen} onClose={() => setChangelogOpen(false)} />
+      <ColophonModal active={colophonOpen} onClose={() => setColophonOpen(false)} />
     </>
   )
 }

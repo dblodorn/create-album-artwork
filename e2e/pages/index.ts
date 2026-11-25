@@ -74,6 +74,24 @@ export class ColorMenu extends Menu {
   }
 }
 
+/** The Colophon modal (🎨 → Colophon…). */
+export class Colophon {
+  constructor(readonly page: Page) {}
+  get dialog() {
+    return this.page.getByRole('dialog').filter({ has: this.page.getByRole('heading', { name: 'Colophon', exact: true }) })
+  }
+  /** Its sections, in order. */
+  get sections() {
+    return this.dialog.getByRole('region')
+  }
+  section(name: string) {
+    return this.dialog.getByRole('region', { name, exact: true })
+  }
+  get links() {
+    return this.dialog.getByRole('link')
+  }
+}
+
 export class Tabs {
   constructor(readonly page: Page) {}
   get list() {
@@ -275,6 +293,7 @@ export const pages = (page: Page) => ({
   file: new FileMenu(page),
   edit: new EditMenu(page),
   color: new ColorMenu(page),
+  colophon: new Colophon(page),
   tabs: new Tabs(page),
   closeDialog: new CloseDialog(page),
   zoom: new ZoomToolbar(page),
