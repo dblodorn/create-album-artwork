@@ -5,6 +5,12 @@ export const RECT_SCENE = {
   background: '#ffe8a3',
 }
 
+export const TEXT_SCENE = {
+  version: '7.0.0',
+  objects: [{ type: 'Textbox', text: 'WORN', left: 500, top: 400, width: 600, fontSize: 120, fontFamily: 'Arial', fill: '#1d3557' }],
+  background: '#ffffff',
+}
+
 export const jsonFile = (name: string, body: unknown) => ({
   name,
   mimeType: 'application/json',

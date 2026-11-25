@@ -1,5 +1,7 @@
 import { BaseFabricObject, type FabricObject, type TMat2D, util } from 'fabric'
 
+import { isText } from './objectTypes'
+
 /*
  * Effects for any layer: blur, brightness, contrast, saturation, tint, noise
  * and a 1-bit dither. Each is a custom object property (never named after a
@@ -12,7 +14,9 @@ import { BaseFabricObject, type FabricObject, type TMat2D, util } from 'fabric'
  * layers go through offscreen canvases (see `renderLayered`), in the order
  * adjustments → noise → dither → tint → blur. Browsers without canvas filters
  * skip blur, the adjustments and tint (the values are kept); noise and dither
- * only need pixel access and compositing, so they work there too.
+ * only need pixel access and compositing, so they work there too. Text layers
+ * get Overprint instead (see `renderOverprint`): blurred and cut back to a hard
+ * edge in JavaScript, so it doesn't need canvas filters either.
  */
 
 export const MAX_BLUR = 50
@@ -25,6 +29,8 @@ export type EffectKey =
   | 'tintAmount'
   | 'noiseAmount'
   | 'ditherPixelSize'
+  | 'deteriorationAmount'
+  | 'overprintAmount'
 
 export type Effects = Record<EffectKey, number> & {
   tintColor: string
@@ -45,8 +51,8 @@ export type OnEffect = (
   merge?: boolean
 ) => void
 
-/** Slider range and neutral value per effect. */
-export const EFFECT_RANGE: Record<EffectKey, { min: number; max: number; neutral: number }> = {
+/** Slider range, neutral value and step (1 unless given) per effect. */
+export const EFFECT_RANGE: Record<EffectKey, { min: number; max: number; neutral: number; step?: number }> = {
   blurAmount: { min: 0, max: MAX_BLUR, neutral: 0 },
   brightnessAmount: { min: -100, max: 100, neutral: 0 },
   contrastAmount: { min: -100, max: 100, neutral: 0 },
@@ -55,6 +61,9 @@ export const EFFECT_RANGE: Record<EffectKey, { min: number; max: number; neutral
   noiseAmount: { min: 0, max: 100, neutral: 0 },
   // Artboard units per bitmap pixel; 2 puts ~500 across the artboard, about an original Mac screen.
   ditherPixelSize: { min: 1, max: 8, neutral: 2 },
+  // Overprint (text): the blur before the cut, as a fraction of the font size, and where the cut falls.
+  deteriorationAmount: { min: 0, max: 0.15, neutral: 0, step: 0.001 },
+  overprintAmount: { min: 2, max: 98, neutral: 67 },
 }
 
 export const EFFECT_KEYS = Object.keys(EFFECT_RANGE) as EffectKey[]
@@ -72,6 +81,8 @@ export const EFFECT_LABEL: Record<EffectKey | 'tintColor' | 'tintInvert' | 'dith
   ditherEnabled: 'Dither',
   ditherPixelSize: 'Pixel size',
   ditherKnockout: 'Remove white',
+  deteriorationAmount: 'Deterioration',
+  overprintAmount: 'Overprint',
 }
 
 /** Red, so a first raise of Strength shows a visible tint. */
@@ -89,13 +100,16 @@ export const NEUTRAL_EFFECTS: Effects = {
   ditherEnabled: false,
   ditherPixelSize: EFFECT_RANGE.ditherPixelSize.neutral,
   ditherKnockout: false,
+  deteriorationAmount: 0,
+  overprintAmount: EFFECT_RANGE.overprintAmount.neutral,
 }
 
-/** A whole number within the effect's range; its neutral value for anything that isn't a finite number. */
+/** The value rounded to the effect's step, within its range; its neutral value for anything that isn't a finite number. */
 export function clampEffect(key: EffectKey, value: unknown): number {
-  const { min, max, neutral } = EFFECT_RANGE[key]
+  const { min, max, neutral, step = 1 } = EFFECT_RANGE[key]
   if (typeof value !== 'number' || !Number.isFinite(value)) return neutral
-  return Math.min(max, Math.max(min, Math.round(value))) || 0
+  // toFixed trims float noise, so 0.06 stays 0.06 in the scene.
+  return Number(Math.min(max, Math.max(min, Math.round(value / step) * step)).toFixed(3)) || 0
 }
 
 /** `#rrggbb` (lowercase), or null if `value` isn't a 6-digit hex colour. */
@@ -117,9 +131,12 @@ export function getEffects(object: unknown): Effects {
 
 export const getBlur = (object: unknown): number => getEffects(object).blurAmount
 
-/** Whether anything changes how the layer looks. Pixel size and Remove white alone don't: they only matter while dithering. */
+// Settings that change nothing on their own: they only matter with Dither or Deterioration on.
+const DEPENDENT: EffectKey[] = ['ditherPixelSize', 'overprintAmount']
+
+/** Whether anything changes how the layer looks. Pixel size, Remove white and Overprint alone don't. */
 export const hasEffects = (e: Effects) =>
-  e.ditherEnabled || EFFECT_KEYS.some((key) => key !== 'ditherPixelSize' && e[key] !== EFFECT_RANGE[key].neutral)
+  e.ditherEnabled || EFFECT_KEYS.some((key) => !DEPENDENT.includes(key) && e[key] !== EFFECT_RANGE[key].neutral)
 
 /** Whether the effects need pixel work (noise or dither) rather than filters alone. */
 const needsPixels = (e: Effects) => e.ditherEnabled || e.noiseAmount > 0
@@ -294,6 +311,108 @@ export function atkinson(data: Uint8ClampedArray, width: number, height: number,
   }
 }
 
+// Overprint follows Mark Hurrell's overprint generator: CSS blur(), then an
+// feFuncA table that cuts alpha to 0 or 1 with one soft stop (0.05) at the
+// threshold. Colour isn't touched, so the blurred colour keeps the text's own.
+const OVERPRINT_STOPS = 400
+const tables = new Map<number, Uint8Array>()
+
+/**
+ * The generator's alpha table for an Overprint level (2–98) as a 256-entry
+ * lookup, interpolated between stops as `feFuncA type="table"` is. Higher
+ * levels cut lower on the blurred edge, so letters come out bolder.
+ */
+export function overprintTable(level: number): Uint8Array {
+  const cached = tables.get(level)
+  if (cached) return cached
+  const n = OVERPRINT_STOPS - 1
+  const k = Math.round(((100 - level) / 100) * n)
+  const stop = (i: number) => (i < k ? 0 : i === k ? 0.05 : 1)
+  const lut = new Uint8Array(256)
+  for (let a = 0; a < 256; a++) {
+    const c = a / 255
+    const i = Math.min(n - 1, Math.floor(c * n))
+    const v = stop(i) + (c * n - i) * (stop(i + 1) - stop(i))
+    lut[a] = Math.round(v * 255)
+  }
+  tables.set(level, lut)
+  return lut
+}
+
+/** Widths of three box blurs that together approximate a Gaussian of `sigma` px (all odd). */
+export function boxSizes(sigma: number): [number, number, number] {
+  const n = 3
+  let lower = Math.floor(Math.sqrt((12 * sigma * sigma) / n + 1))
+  if (lower % 2 === 0) lower--
+  const upper = lower + 2
+  const m = Math.round((12 * sigma * sigma - n * lower * lower - 4 * n * lower - 3 * n) / (-4 * lower - 4))
+  return [0, 1, 2].map((i) => (i < m ? lower : upper)) as [number, number, number]
+}
+
+/** One box blur of radius `r` along rows (`horizontal`) or columns, treating outside the buffer as transparent. */
+function boxPass(src: Float32Array, dst: Float32Array, w: number, h: number, r: number, horizontal: boolean) {
+  const scale = 1 / (2 * r + 1)
+  const lines = horizontal ? h : w
+  const length = horizontal ? w : h
+  const stride = horizontal ? 4 : w * 4
+  for (let line = 0; line < lines; line++) {
+    const base = horizontal ? line * w * 4 : line * 4
+    for (let c = 0; c < 4; c++) {
+      const at = (i: number) => base + i * stride + c
+      let sum = 0
+      for (let i = 0; i <= Math.min(r, length - 1); i++) sum += src[at(i)]
+      for (let i = 0; i < length; i++) {
+        dst[at(i)] = sum * scale
+        if (i + r + 1 < length) sum += src[at(i + r + 1)]
+        if (i - r >= 0) sum -= src[at(i - r)]
+      }
+    }
+  }
+}
+
+/** Gaussian-style blur of all four channels of a w×h RGBA float buffer, in place (three box passes each way). */
+export function boxBlurRGBA(data: Float32Array, w: number, h: number, sigma: number) {
+  if (!(sigma > 0)) return
+  const temp = new Float32Array(data.length)
+  for (const size of boxSizes(sigma)) {
+    const r = (size - 1) / 2
+    if (r < 1) continue
+    boxPass(data, temp, w, h, r, true)
+    boxPass(temp, data, w, h, r, false)
+  }
+}
+
+/**
+ * Overprint an RGBA buffer in place: premultiply, blur by `sigma` px, cut
+ * alpha through the level's table, then un-premultiply, so colour is the
+ * blurred colour (as CSS blur then feFuncA leaves it).
+ */
+export function applyOverprint(data: Uint8ClampedArray, w: number, h: number, sigma: number, level: number) {
+  const f = new Float32Array(data.length)
+  for (let p = 0; p < data.length; p += 4) {
+    const a = data[p + 3] / 255
+    f[p] = data[p] * a
+    f[p + 1] = data[p + 1] * a
+    f[p + 2] = data[p + 2] * a
+    f[p + 3] = data[p + 3]
+  }
+  boxBlurRGBA(f, w, h, sigma)
+  const lut = overprintTable(level)
+  for (let p = 0; p < data.length; p += 4) {
+    const alpha = f[p + 3]
+    const out = lut[Math.min(255, Math.max(0, Math.round(alpha)))]
+    if (out === 0 || alpha <= 0) {
+      data[p] = data[p + 1] = data[p + 2] = data[p + 3] = 0
+      continue
+    }
+    const a = alpha / 255
+    data[p] = f[p] / a
+    data[p + 1] = f[p + 1] / a
+    data[p + 2] = f[p + 2] / a
+    data[p + 3] = out
+  }
+}
+
 // Reused between frames: the layer being composed, and a working copy (tint, noise).
 let layers: [HTMLCanvasElement, HTMLCanvasElement] | null = null
 
@@ -335,10 +454,10 @@ function groupMatrix(object: FabricObject, ctx: CanvasRenderingContext2D): TMat2
  * The layer's own frame: centred on the object and turned with it, but not
  * scaled, so one unit is one artboard unit (or a selection's unit while it's
  * being scaled). `group` is from `groupMatrix`. `size` is the scaled object plus
- * its shadow; `cell` is artboard units per bitmap pixel (grown if the grid
- * would pass MAX_CELLS).
+ * its shadow and `margin` (artboard units) on every side; `cell` is artboard
+ * units per bitmap pixel (grown if the grid would pass MAX_CELLS).
  */
-function localFrame(object: FabricObject, cellSize: number, group: TMat2D) {
+function localFrame(object: FabricObject, cellSize: number, group: TMat2D, margin = 0) {
   const center = object.getRelativeCenterPoint()
   const placement = util.multiplyTransformMatrices(
     group,
@@ -348,7 +467,7 @@ function localFrame(object: FabricObject, cellSize: number, group: TMat2D) {
     )
   )
   const dims = object._getTransformedDimensions()
-  const reach = shadowReach(object) * Math.max(Math.abs(object.scaleX), Math.abs(object.scaleY))
+  const reach = shadowReach(object) * Math.max(Math.abs(object.scaleX), Math.abs(object.scaleY)) + margin
   const width = dims.x + 2 * reach
   const height = dims.y + 2 * reach
   const cell = Math.max(cellSize, width / MAX_CELLS, height / MAX_CELLS)
@@ -359,9 +478,9 @@ function localFrame(object: FabricObject, cellSize: number, group: TMat2D) {
 
 type Frame = ReturnType<typeof localFrame>
 
-// Per object: the dithered bitmap and the noise texture, each with the key it was made for.
+// Per object: the dithered bitmap, the noise texture and the overprinted text, each with the key it was made for.
 type Cached = { key: string; canvas: HTMLCanvasElement }
-const cache = new WeakMap<FabricObject, { dither?: Cached; noise?: Cached }>()
+const cache = new WeakMap<FabricObject, { dither?: Cached; noise?: Cached; overprint?: Cached }>()
 // Bumped whenever Fabric marks an object's content changed (fill, path, image…).
 const versions = new WeakMap<FabricObject, number>()
 
@@ -371,8 +490,9 @@ const cacheOf = (object: FabricObject) => {
   return entry
 }
 
-/** Tests only: how many times the dither pass has run. */
+/** Tests only: how many times the dither and overprint passes have run. */
 export const ditherRuns = { count: 0 }
+export const overprintRuns = { count: 0 }
 
 /**
  * The layer as a 1-bit bitmap in its own frame, one canvas pixel per cell:
@@ -461,11 +581,11 @@ function noiseTexture(object: FabricObject, frame: Frame) {
   return canvas
 }
 
-/** Draws a frame-sized bitmap onto `ctx` (whose transform is the parent's) in the object's frame, pixels kept square. */
-function drawInFrame(ctx: CanvasRenderingContext2D, bitmap: HTMLCanvasElement, frame: Frame) {
+/** Draws a frame-sized bitmap onto `ctx` (whose transform is the parent's) in the object's frame; pixels kept square unless `smooth`. */
+function drawInFrame(ctx: CanvasRenderingContext2D, bitmap: HTMLCanvasElement, frame: Frame, smooth = false) {
   ctx.save()
   ctx.transform(...frame.placement)
-  ctx.imageSmoothingEnabled = false
+  ctx.imageSmoothingEnabled = smooth
   ctx.drawImage(bitmap, -frame.width / 2, -frame.height / 2, frame.width, frame.height)
   ctx.restore()
 }
@@ -573,6 +693,113 @@ function renderLayered(
   ctx.restore()
 }
 
+/** Overprint's blur (σ) in artboard units: Deterioration × font size, at the text's scale (geometric mean, so a stretched box gets one radius). */
+function overprintSigma(object: FabricObject, e: Effects) {
+  const fontSize = (object as { fontSize?: number }).fontSize ?? 0
+  return e.deteriorationAmount * fontSize * Math.sqrt(Math.abs(object.scaleX * object.scaleY))
+}
+
+/**
+ * Artboard units per bitmap pixel for `scale` device px per unit: at least
+ * device resolution, snapped to steps of √2 so zooming re-renders only when
+ * it crosses one.
+ */
+export function overprintCell(scale: number): number {
+  if (!(scale > 0)) return 1
+  return 2 ** (-Math.ceil(2 * Math.log2(scale)) / 2)
+}
+
+/**
+ * The text overprinted in its own frame, about one pixel per device pixel:
+ * rendered without its shadow (cast when drawn) at full opacity, then
+ * `applyOverprint`. Cached until anything it depends on changes (not
+ * position, angle, or zoom within a √2 step). Null when the pixels can't be
+ * read (a tainted pattern fill).
+ */
+function overprintBitmap(object: FabricObject, e: Effects, frame: Frame, sigma: number, render: Render) {
+  const key = [
+    e.deteriorationAmount,
+    e.overprintAmount,
+    frame.cell,
+    frame.cols,
+    frame.rows,
+    object.scaleX,
+    object.scaleY,
+    object.skewX,
+    object.skewY,
+    object.flipX,
+    object.flipY,
+    versions.get(object) ?? 0,
+    (object as { text?: string }).text ?? '',
+  ].join('|')
+  const entry = cacheOf(object)
+  if (entry.overprint?.key === key) return entry.overprint.canvas
+
+  const canvas = entry.overprint?.canvas ?? document.createElement('canvas')
+  canvas.width = frame.cols
+  canvas.height = frame.rows
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  const toPixels = util.multiplyTransformMatrices(
+    [1 / frame.cell, 0, 0, 1 / frame.cell, frame.width / 2 / frame.cell, frame.height / 2 / frame.cell],
+    util.invertTransform(frame.placement)
+  )
+  ctx.setTransform(...toPixels)
+  ctx.filter = 'none'
+  const { opacity, shadow } = object
+  object.opacity = 1
+  object.shadow = null
+  try {
+    render.call(object, ctx)
+  } finally {
+    object.opacity = opacity
+    object.shadow = shadow
+  }
+  try {
+    const image = ctx.getImageData(0, 0, frame.cols, frame.rows)
+    applyOverprint(image.data, frame.cols, frame.rows, sigma / frame.cell, e.overprintAmount)
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.putImageData(image, 0, 0)
+  } catch {
+    entry.overprint = undefined
+    return null
+  }
+  overprintRuns.count++
+  entry.overprint = { key, canvas }
+  return canvas
+}
+
+/**
+ * Overprinted text: the cached bitmap drawn in the object's frame with its
+ * opacity, composite operation and shadow (so the shadow follows the worn
+ * shapes), blurred last by Blur where canvas filters work.
+ */
+function renderOverprint(object: FabricObject, ctx: CanvasRenderingContext2D, e: Effects, render: Render, filters: boolean) {
+  const t = ctx.getTransform()
+  const group = groupMatrix(object, ctx)
+  const device = util.multiplyTransformMatrices([t.a, t.b, t.c, t.d, t.e, t.f], group)
+  const sigma = overprintSigma(object, e)
+  // Bolder letters spread up to about 3σ past their outlines.
+  const frame = localFrame(object, overprintCell(Math.hypot(device[0], device[1])), group, 3 * sigma)
+  const bitmap = overprintBitmap(object, e, frame, sigma, render)
+  if (!bitmap) return render.call(object, ctx)
+  ctx.save()
+  try {
+    ctx.filter = (filters && blurFilter(e, t)) || 'none'
+    ctx.globalCompositeOperation = object.globalCompositeOperation
+    ctx.globalAlpha *= object.opacity
+    object._setShadow(ctx)
+    drawInFrame(ctx, bitmap, frame, true)
+  } finally {
+    ctx.restore()
+  }
+}
+
+/** How far Overprint can spread text past its outline, in artboard units (0 for anything else). */
+export function overprintSpill(object: FabricObject): number {
+  const e = getEffects(object)
+  return isText(object) && e.deteriorationAmount > 0 ? 3 * overprintSigma(object, e) : 0
+}
+
 let installed = false
 
 /** Registers the effect properties for serialisation and renders them. Call before any object exists. */
@@ -593,8 +820,14 @@ export function installObjectEffects() {
     // Read before the base render clears it: the dither bitmap is stale.
     if (this.dirty) versions.set(this, (versions.get(this) ?? 0) + 1)
     const e = getEffects(this)
-    if (!hasEffects(e) || this.isNotVisible()) return render.call(this, ctx)
+    if (this.isNotVisible()) return render.call(this, ctx)
     const filters = canvasFiltersSupported()
+    if (e.deteriorationAmount > 0) {
+      if (isText(this)) return renderOverprint(this, ctx, e, render, filters)
+      // Only offered on text; ignored anywhere else.
+      e.deteriorationAmount = 0
+    }
+    if (!hasEffects(e)) return render.call(this, ctx)
     if (needsPixels(e) || (filters && e.tintAmount > 0)) return renderLayered(this, ctx, e, render, filters)
     if (!filters) return render.call(this, ctx)
     ctx.save()

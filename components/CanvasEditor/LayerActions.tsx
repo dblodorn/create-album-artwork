@@ -13,6 +13,7 @@ import {
   type EffectKey,
   type OnEffect,
   canvasFiltersSupported,
+  clampEffect,
   getEffects,
 } from './lib/objectEffects'
 import { isImage, isText } from './lib/objectTypes'
@@ -290,7 +291,7 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
   // Likewise the tint colour while the picker is open.
   const [picking, setPicking] = useState<string | null>(null)
   const effects = { ...getEffects(object), ...dragging, ...(picking ? { tintColor: picking } : {}) }
-  // Blur, the colour adjustments and tint need canvas filters; noise and dither don't.
+  // Blur, the colour adjustments and tint need canvas filters; overprint, noise and dither don't.
   const supported = canvasFiltersSupported()
   const change = (key: EffectKey) => (value: number, final: boolean, merge?: boolean) => {
     setDragging(({ [key]: _, ...rest }) => (final ? rest : { ...rest, [key]: value }))
@@ -311,6 +312,13 @@ function EffectsControls({ object, onEffect }: { object: FabricObject; onEffect:
   return (
     <View gap={3} attributes={{ style: { width: 220 } }}>
       <EffectSection name="Blur">{slider('blurAmount', 'Blur')}</EffectSection>
+      {isText(object) && (
+        <EffectSection name="Overprint">
+          {slider('deteriorationAmount', EFFECT_LABEL.deteriorationAmount, '', false)}
+          {/* Overprint only moves the cut on a blurred edge, so it waits for Deterioration (and keeps its value). */}
+          {slider('overprintAmount', EFFECT_LABEL.overprintAmount, '', effects.deteriorationAmount === 0)}
+        </EffectSection>
+      )}
       {!isText(object) && (
         <>
           <EffectSection name="Colour">{COLOUR_KEYS.map((key) => slider(key, EFFECT_LABEL[key]))}</EffectSection>
@@ -407,13 +415,15 @@ function EffectSlider({
   disabled: boolean
   onChange: (value: number, final: boolean, merge?: boolean) => void
 } & Partial<ResetProps>) {
-  const { min, max, neutral } = EFFECT_RANGE[name]
+  const { min, max, neutral, step = 1 } = EFFECT_RANGE[name]
+  // Mid-drag values can carry float noise (0.060000000000000005); show them as they'll be stored.
+  const shown = clampEffect(name, value)
   return (
     // Reshaped labels the range input by its value tooltip, so the row names the control.
     <View gap={1} attributes={{ role: 'group', 'aria-label': caption }}>
       <View direction="row" justify="space-between" align="center">
         <Text variant="caption-1" color="neutral-faded">
-          {caption} · <span aria-live="polite">{`${value}${unit}`}</span>
+          {caption} · <span aria-live="polite">{`${shown}${unit}`}</span>
         </Text>
         <Pill
           disabled={(atNeutral ?? value === neutral) || disabled}
@@ -431,8 +441,9 @@ function EffectSlider({
         name={name}
         min={min}
         max={max}
-        step={1}
+        step={step}
         value={value}
+        renderValue={({ value }) => String(clampEffect(name, value))}
         disabled={disabled}
         onChange={({ value }) => onChange(value, false)}
         onChangeCommit={({ value }) => onChange(value, true, true)}

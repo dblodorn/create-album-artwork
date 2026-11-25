@@ -4,6 +4,12 @@ What changed in the album artwork editor, newest first. Each entry is a
 `## YYYY-MM-DD — Title` heading followed by `-` bullets; the editor's
 🎨 → Changelog modal reads this file.
 
+## 2026-11-24 — Overprint for text
+
+- Text layers have a new Overprint section in Effects, after Mark Hurrell's overprint generator. Deterioration blurs the letters and Overprint cuts them back to a hard edge, so type comes out with rounded corners and ink-spread or worn edges, in its own colour.
+- Raise Overprint for bolder letters, lower it for thinner ones. It's disabled until Deterioration is above 0, and each slider has its own Reset and undo step.
+- It's saved with the file, shows in the PNG export, follows the text's shadow, and works in browsers without canvas filters.
+
 ## 2026-11-24 — Repeated undo after using a popout in Safari
 
 - Fixed: in Safari, after using the Effects or Transform popout, the first ⌘Z worked but pressing it again did nothing until you clicked the canvas. Undo now keeps working.

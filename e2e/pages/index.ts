@@ -183,9 +183,9 @@ export class LayersPanel {
   }
 }
 
-type EffectName = 'Blur' | 'Brightness' | 'Contrast' | 'Saturation' | 'Tint' | 'Noise' | 'Pixel size'
+type EffectName = 'Blur' | 'Deterioration' | 'Overprint' | 'Brightness' | 'Contrast' | 'Saturation' | 'Tint' | 'Noise' | 'Pixel size'
 
-type SectionName = 'Blur' | 'Colour' | 'Tint' | 'Noise' | 'Dither'
+type SectionName = 'Blur' | 'Overprint' | 'Colour' | 'Tint' | 'Noise' | 'Dither'
 
 /**
  * The selected layer's Effects popout. Each control is a group named after it,

@@ -6,8 +6,11 @@ import { captureSnapshot, restoreSnapshot } from './history'
 import {
   NEUTRAL_EFFECTS,
   addNoise,
+  applyOverprint,
   atkinson,
   blurRadius,
+  boxBlurRGBA,
+  boxSizes,
   clampEffect,
   ditherRuns,
   filterString,
@@ -17,6 +20,9 @@ import {
   installObjectEffects,
   noise,
   normaliseColor,
+  overprintCell,
+  overprintRuns,
+  overprintTable,
   setFiltersSupportedForTests,
   tintBox,
 } from './objectEffects'
@@ -564,5 +570,184 @@ describe('dither cache', () => {
     const start = ditherRuns.count
     rect.render(ctx)
     expect(ditherRuns.count - start).toBe(1)
+  })
+})
+
+describe('effect steps', () => {
+  it('rounds whole-number effects as before', () => {
+    expect(clampEffect('noiseAmount', 12.4)).toBe(12)
+    expect(clampEffect('overprintAmount', 70.6)).toBe(71)
+  })
+
+  it('rounds Deterioration to 0.001 without float noise, within 0–0.15', () => {
+    expect(clampEffect('deteriorationAmount', 0.06)).toBe(0.06)
+    expect(clampEffect('deteriorationAmount', 0.1 + 0.2 - 0.25)).toBe(0.05)
+    expect(clampEffect('deteriorationAmount', 0.04449)).toBe(0.044)
+    expect(clampEffect('deteriorationAmount', 1)).toBe(0.15)
+    expect(clampEffect('deteriorationAmount', -1)).toBe(0)
+  })
+})
+
+describe('Overprint properties', () => {
+  it('serialise at neutral on text and keep set values through clone', async () => {
+    const text = new Textbox('Worn')
+    expect(text.toObject()).toMatchObject({ deteriorationAmount: 0, overprintAmount: 67 })
+    text.set({ deteriorationAmount: 0.06, overprintAmount: 80 } as never)
+    const copy = await text.clone()
+    expect(getEffects(copy)).toMatchObject({ deteriorationAmount: 0.06, overprintAmount: 80 })
+  })
+
+  it('load as neutral from an older scene and clamp out-of-range values', async () => {
+    expect(getEffects(await Textbox.fromObject({ text: 'A' }))).toMatchObject({ deteriorationAmount: 0, overprintAmount: 67 })
+    expect(getEffects({ deteriorationAmount: 3, overprintAmount: 1 })).toMatchObject({ deteriorationAmount: 0.15, overprintAmount: 2 })
+  })
+
+  it('count Overprint only with Deterioration on', () => {
+    expect(hasEffects(fx({ overprintAmount: 90 }))).toBe(false)
+    expect(hasEffects(fx({ deteriorationAmount: 0.01 }))).toBe(true)
+  })
+})
+
+describe('overprintTable', () => {
+  it('keeps the ends: transparent stays transparent, solid stays solid', () => {
+    for (const level of [2, 67, 98]) {
+      expect(overprintTable(level)[0]).toBe(0)
+      expect(overprintTable(level)[255]).toBe(255)
+    }
+  })
+
+  it('is hard: only 0 and 255 apart from the one soft stop', () => {
+    const lut = overprintTable(67)
+    const soft = Array.from(lut).filter((v) => v !== 0 && v !== 255)
+    expect(soft.length).toBeLessThanOrEqual(2)
+  })
+
+  it('cuts lower on the edge as the level rises (bolder)', () => {
+    const cut = (level: number) => overprintTable(level).findIndex((v) => v === 255)
+    expect(cut(85)).toBeLessThan(cut(67))
+    expect(cut(67)).toBeLessThan(cut(40))
+  })
+
+  it("follows the generator's table at the threshold", () => {
+    // Level 67: k = round(0.33 × 399) = 132, so stops 0…131 are 0, 132 is 0.05, then 1.
+    // Alpha 85/255 = 0.3333 sits at 132.99 stops: between 0.05 and 1, 99% of the way.
+    const v = 0.05 + (((85 / 255) * 399 - 132) * 0.95)
+    expect(overprintTable(67)[85]).toBe(Math.round(v * 255))
+    expect(overprintTable(67)[83]).toBe(0)
+  })
+})
+
+describe('boxBlurRGBA', () => {
+  it('pins σ to three box widths', () => {
+    expect(boxSizes(1)).toEqual([1, 1, 3])
+    expect(boxSizes(4)).toEqual([7, 7, 9])
+  })
+
+  it('spreads one pixel symmetrically and keeps its total', () => {
+    const w = 21
+    const data = new Float32Array(w * w * 4)
+    const centre = (10 * w + 10) * 4
+    data[centre + 3] = 255
+    boxBlurRGBA(data, w, w, 2)
+    const at = (x: number, y: number) => data[(y * w + x) * 4 + 3]
+    expect(at(8, 10)).toBeCloseTo(at(12, 10))
+    expect(at(10, 7)).toBeCloseTo(at(10, 13))
+    expect(at(10, 10)).toBeLessThan(255)
+    let total = 0
+    for (let i = 3; i < data.length; i += 4) total += data[i]
+    expect(total).toBeCloseTo(255, 0)
+  })
+
+  it('does nothing at σ 0', () => {
+    const data = new Float32Array([1, 2, 3, 4, 5, 6, 7, 8])
+    boxBlurRGBA(data, 2, 1, 0)
+    expect(Array.from(data)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+  })
+})
+
+describe('applyOverprint', () => {
+  /** A w×w transparent buffer with an opaque square of `rgb` at [x0, x1) × [y0, y1). */
+  const square = (w: number, rgb: [number, number, number], x0 = 8, x1 = 24, y0 = 8, y1 = 24, data = new Uint8ClampedArray(w * w * 4)) => {
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) data.set([...rgb, 255], (y * w + x) * 4)
+    return data
+  }
+  const opaque = (data: Uint8ClampedArray) => {
+    let n = 0
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) n++
+    return n
+  }
+
+  it('leaves solid red with hard alpha and no halo', () => {
+    const data = square(32, [255, 0, 0])
+    applyOverprint(data, 32, 32, 2, 67)
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] === 0) continue
+      expect(data[i]).toBeGreaterThan(250)
+      expect(data[i + 1]).toBe(0)
+    }
+    const soft = Array.from(data.filter((_, i) => i % 4 === 3)).filter((a) => a !== 0 && a !== 255)
+    expect(soft.length).toBeLessThan(opaque(data) / 4)
+  })
+
+  it('covers more at a higher level', () => {
+    const low = square(32, [0, 0, 0])
+    const high = square(32, [0, 0, 0])
+    applyOverprint(low, 32, 32, 2, 30)
+    applyOverprint(high, 32, 32, 2, 90)
+    expect(opaque(high)).toBeGreaterThan(opaque(low))
+  })
+
+  it('keeps two touching colours their own away from the seam', () => {
+    const data = square(40, [255, 0, 0], 4, 20, 4, 36)
+    square(40, [0, 0, 255], 20, 36, 4, 36, data)
+    applyOverprint(data, 40, 40, 1.5, 67)
+    const px = (x: number, y: number) => Array.from(data.slice((y * 40 + x) * 4, (y * 40 + x) * 4 + 4))
+    expect(px(8, 20)).toEqual([255, 0, 0, 255])
+    expect(px(32, 20)).toEqual([0, 0, 255, 255])
+  })
+})
+
+describe('overprintCell', () => {
+  it('is at least device resolution, in √2 steps', () => {
+    expect(overprintCell(1)).toBe(1)
+    expect(overprintCell(2)).toBeCloseTo(0.5)
+    // 1.2 px per unit rounds up to the √2 step.
+    expect(overprintCell(1.2)).toBeCloseTo(Math.SQRT1_2)
+    expect(1 / overprintCell(3)).toBeGreaterThanOrEqual(3)
+  })
+})
+
+describe('overprint cache', () => {
+  afterEach(() => setFiltersSupportedForTests(null))
+
+  it('overprints once, again on a text or Overprint change, not on move or rotate; ignores non-text', () => {
+    setFiltersSupportedForTests(false)
+    const ctx = document.createElement('canvas').getContext('2d')!
+    ctx.canvas.width = ctx.canvas.height = 400
+    Object.assign(ctx, { getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) })
+    const text = new Textbox('Worn', { left: 100, top: 100, fontSize: 40 })
+    text.set({ deteriorationAmount: 0.05 } as never)
+    const runs = () => overprintRuns.count
+    const start = runs()
+    text.render(ctx)
+    text.render(ctx)
+    expect(runs() - start).toBe(1)
+
+    text.set({ left: 200, angle: 20 })
+    text.render(ctx)
+    expect(runs() - start).toBe(1)
+
+    text.set({ text: 'Worn out' })
+    text.render(ctx)
+    expect(runs() - start).toBe(2)
+
+    text.set({ overprintAmount: 80 } as never)
+    text.render(ctx)
+    expect(runs() - start).toBe(3)
+
+    const rect = new Rect({ left: 50, top: 50, width: 20, height: 20 })
+    rect.set({ deteriorationAmount: 0.05 } as never)
+    rect.render(ctx)
+    expect(runs() - start).toBe(3)
   })
 })
